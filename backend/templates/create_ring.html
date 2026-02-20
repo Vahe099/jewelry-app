@@ -1,0 +1,317 @@
+<!-- backend/templates/create_ring.html -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Create Ring</title>
+  <script defer src="/static/app.js"></script>
+
+  <style>
+    body { font-family: Arial; padding: 16px; }
+    :root{
+      --search-row-height: 44px;  /* 1 տողի մոտավոր բարձրություն */
+      --search-visible-rows: 5;   /* քանի տող ցույց տա */
+    }
+
+    #searchList{
+      height: calc(var(--search-row-height) * var(--search-visible-rows));
+      overflow-y: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 6px;
+      background: #fff;
+    }
+    #searchList .result-row{
+      height: var(--search-row-height);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 6px 4px;
+      border-bottom: 1px solid #eee;
+      box-sizing: border-box;
+    }
+
+    #searchList .result-row:last-child{
+      border-bottom: none;
+    }
+    /* Toast */
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-weight: 700;
+      color: #fff;
+      opacity: 0;
+      transition: .3s;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .toast.ok { background: #22c55e; }
+    .toast.err { background: #ef4444; }
+
+    /* Multi-select look */
+    select[multiple] { border: 1px solid #bbb; }
+    select[multiple] option:checked {
+      background: #3498db;
+      color: white;
+    }
+
+    label { display:block; font-weight:600; margin-bottom:4px; }
+    input, select, button, textarea { width: 100%; padding: 8px; font-size: 20px; }
+    .card { border:1px solid #ddd; padding:12px; border-radius:8px; margin-top:12px; }
+    .row { display:flex; gap:8px; }
+    .row > * { flex:1; }
+    .small { width: auto; }
+
+    /* Ring Options grid: keep 3 columns desktop */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 500px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    /* ---------- TOP BAR: ALWAYS ONE LINE ---------- */
+    .topbar{
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      flex-wrap: nowrap;          /* always one line */
+      margin-bottom: 12px;
+    }
+
+    /* The 3 file fields grow equally */
+    .topbar .field{
+      flex: 1 1 0;
+      min-width: 260px;           /* avoid too much squeeze */
+    }
+
+    /* finger_size is compact and fixed */
+    .topbar .field-small{
+      flex: 0 0 240px;
+    }
+
+    /* File inputs: smaller text so they don't break layout */
+    .topbar input[type="file"]{
+      font-size: 16px;
+      padding: 6px;
+    }
+
+    /* Compact finger_size select */
+    .topbar .field-small select{
+      padding: 6px;
+    }
+
+    /* Actions bar */
+    .actions-bar{
+      display:flex;
+      justify-content:center;
+      margin-bottom: 12px;
+    }
+
+    /* Save button */
+    #saveBtn {
+      background: #22c55e;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 22px;
+      font-size: 20px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+    #saveBtn:hover { background: #16a34a; }
+    #saveBtn:active { transform: scale(0.97); }
+    #saveBtn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    /* Clear button */
+    #clearBtn {
+      background:#334155;
+      color:#fff;
+      border:none;
+      border-radius:8px;
+      padding:10px 16px;
+      font-size:18px;
+      font-weight:700;
+      cursor:pointer;
+      transition:.2s ease;
+    }
+    #clearBtn:hover{ background: #d51010; }
+    #clearBtn:active{ transform:scale(.97); }
+  </style>
+</head>
+
+<body>
+  <div id="toast" class="toast"></div>
+
+  <h2>Create Ring</h2>
+
+  <div class="actions-bar">
+    <button id="clearBtn" type="button" onclick="clearAllMultiSelects()">
+      Clear selected (ALL)
+    </button>
+  </div>
+
+  <form id="ringForm" enctype="multipart/form-data">
+    <!-- TOP BAR: files + finger_size in ONE LINE -->
+    <div class="topbar">
+      <div class="field">
+        <label>3DM file</label>
+        <input type="file" name="file_3dm" accept=".3dm" required />
+      </div>
+
+      <div class="field">
+        <label>STL file</label>
+        <input type="file" name="file_stl" accept=".stl" required />
+      </div>
+
+      <div class="field">
+        <label>Pictures</label>
+        <input type="file" name="pictures" multiple accept=".jpg,.jpeg,.png,.webp" />
+      </div>
+
+      <div class="field field-small">
+        <label>finger_size</label>
+        <select name="finger_size_id" required>
+          {% for fs in finger_sizes %}
+            <option value="{{fs.id}}">{{fs.name}}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Search Result</h3>
+      <div id="searchCount" style="font-weight:700; margin-bottom:8px;">Count: 0</div>
+      <div id="searchList" style="max-height:240px; overflow:auto; border:1px solid #ddd; border-radius:8px; padding:8px;"></div>
+    </div>
+    <div class="card">
+      <h3>Ring Options (multi-select)</h3>
+      <div class="grid">
+          <div>
+              <label>bands</label>
+              <select name="bands_ids" multiple size="5">
+                {% for x in bands %}
+                  <option value="{{x.id}}">{{x.name}}</option>
+                {% endfor %}
+              </select>
+          </div>
+          <div>
+              <label>ring_type</label>
+              <select name="ring_type_ids" multiple size="5">
+                {% for x in ring_types %}
+                  <option value="{{x.id}}">{{x.name}}</option>
+                {% endfor %}
+              </select>
+          </div>
+      </div>
+      <div class="grid">
+        <div>
+          <label>head_setting</label>
+          <select name="head_setting_ids" multiple size="5">
+            {% for x in head_settings %}
+              <option value="{{x.id}}">{{x.name}}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label>shank_type</label>
+          <select name="shank_type_ids" multiple size="5">
+            {% for x in shank_types %}
+              <option value="{{x.id}}">{{x.name}}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label>profiles</label>
+          <select name="profiles_ids" multiple size="5">
+            {% for x in profiles %}
+              <option value="{{x.id}}">{{x.name}}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label>head_textures_details</label>
+          <select name="head_textures_ids" multiple size="5">
+            {% for x in textures %}
+              <option value="{{x.id}}">{{x.name}}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label>shank_textures_details</label>
+          <select name="shank_textures_ids" multiple size="5">
+            {% for x in textures %}
+              <option value="{{x.id}}">{{x.name}}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label>bands_textures_details</label>
+          <select name="bands_textures_ids" multiple size="5">
+            {% for x in textures %}
+              <option value="{{x.id}}">{{x.name}}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Head Gems</h3>
+      <div id="headGems"></div>
+      <button type="button" class="small" onclick="addHeadGemRow()">+ Add Head Gem</button>
+    </div>
+
+    <div class="card">
+      <h3>Shank Gems</h3>
+      <div id="shankGems"></div>
+      <button type="button" class="small" onclick="addShankGemRow()">+ Add Shank Gem</button>
+    </div>
+
+    <div class="card">
+      <h3>Bands Gems</h3>
+      <div id="bandGems"></div>
+      <button type="button" class="small" onclick="addBandGemRow()">+ Add Band Gem</button>
+    </div>
+
+    <!-- Hidden JSON fields -->
+    <input type="hidden" name="head_gems_json" id="head_gems_json" value="[]">
+    <input type="hidden" name="shank_gems_json" id="shank_gems_json" value="[]">
+    <input type="hidden" name="bands_gems_json" id="bands_gems_json" value="[]">
+
+    <div style="margin-top:16px;">
+      <button id="saveBtn" type="submit">SAVE</button>
+    </div>
+  </form>
+
+  <!-- Option data for JS -->
+  <script>
+      // NEW: settings lists are separate
+      window.__head_stone_settings = {{ head_stone_settings | tojson }};
+      window.__shank_bands_stone_settings = {{ shank_bands_stone_settings | tojson }};
+
+      window.__stone_shapes = {{ stone_shapes | tojson }};
+      window.__directions = {{ directions | tojson }};
+  </script>
+
+
+</body>
+</html>
