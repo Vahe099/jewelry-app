@@ -107,3 +107,13 @@ export async function fetchRingImages(ringId: number): Promise<string[]> {
   const data: { images: string[] } = await res.json();
   return data.images.map(path => `${API_BASE}${path}`);
 }
+
+export async function fetchRingFiles(ringId: number): Promise<{ images: string[]; stl: string | null }> {
+  const res = await fetch(`${API_BASE}/api/rings/${ringId}/files`);
+  if (!res.ok) return { images: [], stl: null };
+  const data: { images: string[]; stl: string | null } = await res.json();
+  return {
+    images: data.images.map(p => `${API_BASE}${p}`),
+    stl: data.stl ? `${API_BASE}${data.stl}` : null,
+  };
+}

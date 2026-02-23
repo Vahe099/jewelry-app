@@ -47,6 +47,7 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=str(PROJECT_DIR / "static")), name="static")
 app.mount("/media", StaticFiles(directory=str(SAVE_PICS)), name="media")
+app.mount("/stl", StaticFiles(directory=str(SAVE_STL)), name="stl")
 templates = Jinja2Templates(directory=str(PROJECT_DIR / "templates"))
 
 # -------------------------
@@ -87,8 +88,25 @@ def get_lookups(db: Session = Depends(get_db)):
     }
 
 # -------------------------
-# Ring images API
+# Ring images + files API
 # -------------------------
+@app.get("/api/rings/{ring_id}/files")
+def get_ring_files(ring_id: int, db: Session = Depends(get_db)):
+    ring = db.execute(select(models.Rings).where(models.Rings.id == ring_id)).scalar_one_or_none()
+    if not ring:
+        raise HTTPException(404, "Ring not found")
+    folder = Path(ring.pictures_folder) if ring.pictures_folder else None
+    if folder and folder.exists():
+        code = 10000000 + ring_id
+        exts = {'.jpg', '.jpeg', '.png', '.webp'}
+        files = sorted(f.name for f in folder.iterdir() if f.suffix.lower() in exts)
+        images = [f"/media/{code}/{name}" for name in files]
+    else:
+        images = []
+    stl_path = Path(ring.path_stl) if ring.path_stl else None
+    stl = f"/stl/{stl_path.name}" if stl_path and stl_path.exists() else None
+    return {"images": images, "stl": stl}
+
 @app.get("/api/rings/{ring_id}/images")
 def get_ring_images(ring_id: int, db: Session = Depends(get_db)):
     ring = db.execute(select(models.Rings).where(models.Rings.id == ring_id)).scalar_one_or_none()
@@ -98,7 +116,7 @@ def get_ring_images(ring_id: int, db: Session = Depends(get_db)):
     if not folder or not folder.exists():
         return {"images": []}
     code = 10000000 + ring_id
-    exts = {'.jpg', '.jpeg', '.png', '.webp', '.stl'}
+    exts = {'.jpg', '.jpeg', '.png', '.webp'}
     files = sorted(f.name for f in folder.iterdir() if f.suffix.lower() in exts)
     return {"images": [f"/media/{code}/{name}" for name in files]}
 

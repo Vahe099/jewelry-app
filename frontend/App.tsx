@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { fetchLookups, searchRings, createRing, matchIds, fetchRingImages, type Ring, type Lookups, type LookupItem } from './api/jewelry.ts';
+import { fetchLookups, searchRings, createRing, matchIds, fetchRingFiles, type Ring, type Lookups, type LookupItem } from './api/jewelry.ts';
 import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
+import StlViewer from './components/StlViewer';
 
 // Custom Folder Icon component - Updated to be slightly smaller and ignore blue highlight on selection
 const CustomFolderIcon: React.FC<{ size?: number; isActive?: boolean; isDarkMode?: boolean }> = ({ size = 50, isActive = false, isDarkMode = true }) => {
@@ -197,6 +198,8 @@ const App: React.FC = () => {
   const [selectedListItem, setSelectedListItem] = useState<number | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(DEFAULT_PRODUCT_IMAGE);
   const [ringImages, setRingImages] = useState<string[]>([]);
+  const [ringStl, setRingStl] = useState<string | null>(null);
+  const [viewerMode, setViewerMode] = useState<'image' | 'stl'>('image');
   const [libraryImages, setLibraryImages] = useState<Record<number, string>>({});
 
   const [showSummaryOverlay, setShowSummaryOverlay] = useState<boolean>(false);
@@ -505,7 +508,7 @@ const App: React.FC = () => {
   };
 
   const resetAll = useCallback(() => {
-    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsShiftPressed(false); setIsSerchExpanded(false); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(false); setEditingItemCode(null); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(null);
+    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsShiftPressed(false); setIsSerchExpanded(false); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(false); setEditingItemCode(null); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(null); setRingImages([]); setRingStl(null); setViewerMode('image');
   }, []);
 
   const handleNumericCountChange = (val: string, setter: (v: string) => void) => {
@@ -552,12 +555,16 @@ const App: React.FC = () => {
     setSelectedListItem(num);
     const ring = rings[num - 1];
     if (ring) {
-      fetchRingImages(ring.id).then(imgs => {
-        setRingImages(imgs);
-        setSelectedImage(imgs[0] ?? libraryImages[num] ?? null);
+      fetchRingFiles(ring.id).then(({ images, stl }) => {
+        setRingImages(images);
+        setRingStl(stl);
+        setViewerMode('image');
+        setSelectedImage(images[0] ?? libraryImages[num] ?? null);
       });
     } else {
       setRingImages([]);
+      setRingStl(null);
+      setViewerMode('image');
       setSelectedImage(libraryImages[num] ?? null);
     }
   }, [rings, libraryImages]);
@@ -959,10 +966,14 @@ const App: React.FC = () => {
               <div className={`flex-1 flex flex-col relative overflow-hidden p-1 group ${isDarkMode ? 'bg-[#111827]' : 'bg-[#f1f5f9]'}`}>
                  <div
                    id="main-photo-viewport"
-                   onClick={() => selectedImage && setIsFullScreenImage(true)}
-                   className={`flex-1 w-full min-h-0 flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative cursor-pointer group transition-none overflow-hidden`}
+                   onClick={() => viewerMode === 'image' && selectedImage && setIsFullScreenImage(true)}
+                   className={`flex-1 w-full min-h-0 flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative ${viewerMode === 'stl' ? 'cursor-default' : 'cursor-pointer'} group transition-none overflow-hidden`}
                  >
-                    {selectedImage ? (
+                    {viewerMode === 'stl' && ringStl ? (
+                      <div className="absolute inset-0">
+                        <StlViewer url={ringStl} isDarkMode={isDarkMode} />
+                      </div>
+                    ) : selectedImage ? (
                       <>
                         <div
                           className="absolute inset-0 opacity-40 grayscale-[10%]"
@@ -984,17 +995,25 @@ const App: React.FC = () => {
                       </>
                     ) : null}
                  </div>
-                 {ringImages.length > 0 && (
+                 {(ringImages.length > 0 || ringStl) && (
                    <div className={`flex gap-2 overflow-x-auto shrink-0 p-2 ${isDarkMode ? 'bg-[#0b0f19]' : 'bg-[#e2e8f0]'}`}>
                      {ringImages.map((url, i) => (
                        <img
                          key={i}
                          src={url}
                          alt={`view-${i + 1}`}
-                         onClick={(e) => { e.stopPropagation(); setSelectedImage(url); }}
-                         className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
+                         onClick={(e) => { e.stopPropagation(); setViewerMode('image'); setSelectedImage(url); }}
+                         className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${viewerMode === 'image' && url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
                        />
                      ))}
+                     {ringStl && (
+                       <button
+                         onClick={(e) => { e.stopPropagation(); setViewerMode('stl'); }}
+                         className={`h-24 w-24 shrink-0 border-2 flex items-center justify-center text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer ${viewerMode === 'stl' ? 'border-[#38bdf8] text-[#38bdf8]' : isDarkMode ? 'border-transparent text-gray-400 hover:border-gray-600 hover:text-white' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-black'}`}
+                       >
+                         3D
+                       </button>
+                     )}
                    </div>
                  )}
               </div>
