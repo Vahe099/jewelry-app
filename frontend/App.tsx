@@ -199,7 +199,7 @@ const App: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(DEFAULT_PRODUCT_IMAGE);
   const [ringImages, setRingImages] = useState<string[]>([]);
   const [ringStl, setRingStl] = useState<string | null>(null);
-  const [viewerMode, setViewerMode] = useState<'image' | 'stl'>('image');
+  const [activePreviewTab, setActivePreviewTab] = useState<'IMAGE' | 'STL' | '3DM'>('IMAGE');
   const [libraryImages, setLibraryImages] = useState<Record<number, string>>({});
 
   const [showSummaryOverlay, setShowSummaryOverlay] = useState<boolean>(false);
@@ -508,7 +508,7 @@ const App: React.FC = () => {
   };
 
   const resetAll = useCallback(() => {
-    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsShiftPressed(false); setIsSerchExpanded(false); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(false); setEditingItemCode(null); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(null); setRingImages([]); setRingStl(null); setViewerMode('image');
+    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsShiftPressed(false); setIsSerchExpanded(false); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(false); setEditingItemCode(null); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(null); setRingImages([]); setRingStl(null); setActivePreviewTab('IMAGE');
   }, []);
 
   const handleNumericCountChange = (val: string, setter: (v: string) => void) => {
@@ -558,13 +558,13 @@ const App: React.FC = () => {
       fetchRingFiles(ring.id).then(({ images, stl }) => {
         setRingImages(images);
         setRingStl(stl);
-        setViewerMode('image');
+        setActivePreviewTab('IMAGE');
         setSelectedImage(images[0] ?? libraryImages[num] ?? null);
       });
     } else {
       setRingImages([]);
       setRingStl(null);
-      setViewerMode('image');
+      setActivePreviewTab('IMAGE');
       setSelectedImage(libraryImages[num] ?? null);
     }
   }, [rings, libraryImages]);
@@ -796,9 +796,9 @@ const App: React.FC = () => {
         <div className="flex flex-col items-center justify-start w-full max-full pt-0 h-full min-h-[calc(100vh-160px)]">
           <h2 className={`text-2xl font-black tracking-[0.15em] text-center uppercase mb-4 -mt-2 ${isDarkMode ? 'text-white' : 'text-black'}`}>{isBand ? 'Band' : 'Ring'}</h2>
           <div className={`flex items-center justify-center gap-2 w-full mb-6 pt-0`}>
-             <div className="flex justify-center"><div className={`px-6 py-1 border cursor-pointer hover:opacity-80 transition-opacity ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]'}`}><span className={`text-2xl font-black italic tracking-widest uppercase ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>3DM</span></div></div>
-             <div className="flex justify-center"><div className={`px-6 py-1 border cursor-pointer hover:opacity-80 transition-opacity ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]'}`}><span className={`text-2xl font-black italic tracking-widest uppercase ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>STL</span></div></div>
-             <div className="flex justify-center" onClick={() => { setShowSummaryOverlay(true); setOverlayPage(1); }}><div className={`px-6 py-1 border cursor-pointer hover:opacity-80 transition-opacity ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]'}`}><span className={`text-2xl font-black italic tracking-widest uppercase ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>IMAGE</span></div></div>
+             <div className="flex justify-center"><div className={`px-6 py-1 border cursor-not-allowed opacity-40 ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]'}`}><span className={`text-2xl font-black italic tracking-widest uppercase ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>3DM</span></div></div>
+             <div className="flex justify-center" onClick={() => setActivePreviewTab('STL')}><div className={`px-6 py-1 border cursor-pointer hover:opacity-80 transition-opacity ${activePreviewTab === 'STL' ? (isDarkMode ? 'bg-[#1a263d] border-[#38bdf8]' : 'bg-[#e0f2fe] border-[#0284c7]') : (isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]')}`}><span className={`text-2xl font-black italic tracking-widest uppercase ${activePreviewTab === 'STL' ? 'text-[#38bdf8]' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>STL</span></div></div>
+             <div className="flex justify-center" onClick={() => setActivePreviewTab('IMAGE')}><div className={`px-6 py-1 border cursor-pointer hover:opacity-80 transition-opacity ${activePreviewTab === 'IMAGE' ? (isDarkMode ? 'bg-[#1a263d] border-[#38bdf8]' : 'bg-[#e0f2fe] border-[#0284c7]') : (isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]')}`}><span className={`text-2xl font-black italic tracking-widest uppercase ${activePreviewTab === 'IMAGE' ? 'text-[#38bdf8]' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>IMAGE</span></div></div>
           </div>
           <div className={`grid ${isBand ? 'grid-cols-3' : 'grid-cols-5'} w-full px-10 gap-x-4 mb-4`}>
             <div className="flex flex-col items-center">
@@ -966,10 +966,10 @@ const App: React.FC = () => {
               <div className={`flex-1 flex flex-col relative overflow-hidden p-1 group ${isDarkMode ? 'bg-[#111827]' : 'bg-[#f1f5f9]'}`}>
                  <div
                    id="main-photo-viewport"
-                   onClick={() => viewerMode === 'image' && selectedImage && setIsFullScreenImage(true)}
-                   className={`flex-1 w-full min-h-0 flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative ${viewerMode === 'stl' ? 'cursor-default' : 'cursor-pointer'} group transition-none overflow-hidden`}
+                   onClick={() => activePreviewTab === 'IMAGE' && selectedImage && setIsFullScreenImage(true)}
+                   className={`flex-1 w-full min-h-0 flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative ${activePreviewTab === 'STL' ? 'cursor-default' : 'cursor-pointer'} group transition-none overflow-hidden`}
                  >
-                    {viewerMode === 'stl' && ringStl ? (
+                    {activePreviewTab === 'STL' && ringStl ? (
                       <div className="absolute inset-0">
                         <StlViewer url={ringStl} isDarkMode={isDarkMode} />
                       </div>
@@ -1002,14 +1002,14 @@ const App: React.FC = () => {
                          key={i}
                          src={url}
                          alt={`view-${i + 1}`}
-                         onClick={(e) => { e.stopPropagation(); setViewerMode('image'); setSelectedImage(url); }}
-                         className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${viewerMode === 'image' && url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
+                         onClick={(e) => { e.stopPropagation(); setActivePreviewTab('IMAGE'); setSelectedImage(url); }}
+                         className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${activePreviewTab === 'IMAGE' && url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
                        />
                      ))}
                      {ringStl && (
                        <button
-                         onClick={(e) => { e.stopPropagation(); setViewerMode('stl'); }}
-                         className={`h-24 w-24 shrink-0 border-2 flex items-center justify-center text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer ${viewerMode === 'stl' ? 'border-[#38bdf8] text-[#38bdf8]' : isDarkMode ? 'border-transparent text-gray-400 hover:border-gray-600 hover:text-white' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-black'}`}
+                         onClick={(e) => { e.stopPropagation(); setActivePreviewTab('STL'); }}
+                         className={`h-24 w-24 shrink-0 border-2 flex items-center justify-center text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer ${activePreviewTab === 'STL' ? 'border-[#38bdf8] text-[#38bdf8]' : isDarkMode ? 'border-transparent text-gray-400 hover:border-gray-600 hover:text-white' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-black'}`}
                        >
                          3D
                        </button>
