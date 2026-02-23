@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, Form, Depends, HTTPException, UploadFile, 
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, desc, func
@@ -36,7 +37,16 @@ PROJECT_DIR = BASE_DIR.parent
 
 app = FastAPI(title="Jewelry Web (FastAPI + HTML)")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory=str(PROJECT_DIR / "static")), name="static")
+app.mount("/media", StaticFiles(directory=str(SAVE_PICS)), name="media")
 templates = Jinja2Templates(directory=str(PROJECT_DIR / "templates"))
 
 # -------------------------
@@ -50,6 +60,47 @@ def get_db():
         db.close()
 
 DEBUG_PAGES = os.getenv("DEBUG_PAGES", "1") == "1"
+
+# -------------------------
+# Lookups API (used by React frontend)
+# -------------------------
+@app.get("/api/lookups")
+def get_lookups(db: Session = Depends(get_db)):
+    def rows(model, name_field: str):
+        return sorted(
+            [{"id": r.id, "name": getattr(r, name_field)}
+             for r in db.execute(select(model)).scalars().all()],
+            key=lambda x: x["name"],
+        )
+    return {
+        "ring_types":    rows(models.RingType,        "ring_name"),
+        "head_settings": rows(models.HeadSetting,     "head_setting_name"),
+        "shank_types":   rows(models.ShankType,       "shank_type_name"),
+        "profiles":      rows(models.Profiles,        "profiles_name"),
+        "textures":      rows(models.TexturesDetails, "textures_details_name"),
+        "bands":         rows(models.Bands,           "band_name"),
+        "finger_sizes":  rows(models.FingerSizes,     "finger_sizes_name"),
+        "head_stone_settings":        rows(models.HeadStoneSetting,      "name"),
+        "shank_bands_stone_settings": rows(models.ShankBandsStoneSetting, "name"),
+        "stone_shapes":               rows(models.StoneShape,             "stone_shape_name"),
+        "directions":                 rows(models.Directions,             "directions_name"),
+    }
+
+# -------------------------
+# Ring images API
+# -------------------------
+@app.get("/api/rings/{ring_id}/images")
+def get_ring_images(ring_id: int, db: Session = Depends(get_db)):
+    ring = db.execute(select(models.Rings).where(models.Rings.id == ring_id)).scalar_one_or_none()
+    if not ring:
+        raise HTTPException(404, "Ring not found")
+    folder = Path(ring.pictures_folder) if ring.pictures_folder else None
+    if not folder or not folder.exists():
+        return {"images": []}
+    code = 10000000 + ring_id
+    exts = {'.jpg', '.jpeg', '.png', '.webp', '.stl'}
+    files = sorted(f.name for f in folder.iterdir() if f.suffix.lower() in exts)
+    return {"images": [f"/media/{code}/{name}" for name in files]}
 
 # -------------------------
 # Helpers: fetch lookup lists for dropdowns

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { fetchLookups, searchRings, type Ring, type Lookups } from './api/jewelry';
+import { fetchLookups, searchRings, createRing, matchIds, fetchRingImages, type Ring, type Lookups, type LookupItem } from './api/jewelry.ts';
 import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 
 // Custom Folder Icon component - Updated to be slightly smaller and ignore blue highlight on selection
@@ -27,14 +27,6 @@ const CustomFolderIcon: React.FC<{ size?: number; isActive?: boolean; isDarkMode
 };
 
 // Define constants for ring sizes and menu labels
-const VALID_SIZES = [
-  "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5", "2.75", "3", "3.25", "3.5", "3.75",
-  "4", "4.25", "4.5", "4.75", "5", "5.25", "5.5", "5.75", "6", "6.25", "6.5", "6.75",
-  "7", "7.25", "7.5", "7.75", "8", "8.25", "8.5", "8.75", "9", "9.25", "9.5", "9.75",
-  "10", "10.25", "10.5", "10.75", "11", "11.25", "11.5", "11.75", "12", "12.25", "12.5", "12.75",
-  "13", "13.25", "13.5", "13.75", "14", "14.25", "14.5", "14.75", "15", "15.25", "15.5", "15.75", "16"
-];
-
 const INTEGER_SIZE_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"];
 const SUFFIX_OPTIONS = [".25", ".5", ".75"];
 
@@ -178,6 +170,19 @@ const App: React.FC = () => {
   const [rings, setRings] = useState<Ring[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [lookups, setLookups] = useState<Lookups | null>(null);
+  const validSizes = useMemo(
+    () => (lookups?.finger_sizes || []).map(x => String(x.name)),
+    [lookups]
+  );
+
+  // Upload state for the "ADD TO LIB" modal
+  const [file3dm, setFile3dm] = useState<File | null>(null);
+  const [fileStl, setFileStl] = useState<File | null>(null);
+  const [picFiles, setPicFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadRevision, setUploadRevision] = useState(0);
+  const [fingerSizeId, setFingerSizeId] = useState('');
 
   const listItemsCount = rings.length;
   const thumbHeight = 128; // h-32 in Tailwind is 8rem = 128px
@@ -189,32 +194,36 @@ const App: React.FC = () => {
   const [thumbTop, setThumbTop] = useState(topPadding);
   const [isDraggingThumb, setIsDraggingThumb] = useState(false);
 
-  const [selectedListItem, setSelectedListItem] = useState<number | null>(1);
+  const [selectedListItem, setSelectedListItem] = useState<number | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(DEFAULT_PRODUCT_IMAGE);
+  const [ringImages, setRingImages] = useState<string[]>([]);
   const [libraryImages, setLibraryImages] = useState<Record<number, string>>({});
 
   const [showSummaryOverlay, setShowSummaryOverlay] = useState<boolean>(false);
   const [overlayPage, setOverlayPage] = useState<number>(0);
   const [isFullScreenImage, setIsFullScreenImage] = useState<boolean>(false);
 
-  const menuData: Record<number, string[]> = {
-    0: ["Rings", "Earrings", "Bracelets", "Necklace", "Body Jewelry", "Accessories"],
-    1: ["Rings", "Bands"],
-    2: ["ENG Solitaire", "ENG Solitaire with Diamonds", "ENG Halo", "ENG Hidden Halo", "ENG Three-Stone", "ENG Two Stone", "ENG SET", "ENG Accent", "ENG Fancy", "Signet Ring", "Dome Rings", "Cocktail Ring", "Stackable Rings", "", "Open Rings"],
-    3: ["Wedding Bands", "Eternity Bands", "Plain Bands", "Domed Bands", "Twisted Bands", "Split Bands"],
-    5: ["HEAD", "MineGem", "GEMS", "", "Texture&Details", ""], 
-    7: ["Simple", "design", "fancy", "basket", "Lucida", "tulip"],
-    8: ["Bezel", "Half bezel", "Three Prongs", "Four Prongs", "Five Prongs", "Six Prongs", "Double Prong", "Burnish", "Peg"],
-    9: ["Secondary Settings", "Shape", "Direction", "Size", "Count"],
-    11: ["Bezel", "Half bezel", "Three Prongs", "Four Prongs", "Five Prongs", "Six Prongs", "Double Prong", "Burnish", "Peg"],
-    12: ["Round", "Asscher", "Cushion", "Emerald", "Marquise", "Oval", "Pear", "Princess", "Radiant", "Radiant SQ", "Cushion SQ", "heart", "Baguette", "Tapered Baguette", "hexagon", "Kite", "Trillion", "Half Moon"],
-    13: ["North-South", "Slanted", "Alternating", "Est-West", "not directed"], 
-    14: ["Classic Shank", "Knife-Edge", "Cathedral", "Tapered Shank", "Split Shank", "Twisted (Infinity)", "Bypass Shank", "Euro Shank", "Cathedral & Tapered Shank", "Open", "Fancy"],
-    15: ["Rectangular", "Roundish", "Half-Roundish", "Arch, D-Shape", "Knife-Edge", "Knife-Arch", "Fancy", "Rectangular Comfort", "Roundish Comfort", "Half-Roundish Comfort", "Arch, D-Shape Comfort", "Knife-Edge Comfort", "Knife-Arch Comfort", "Fancy Comfort"],
-    16: ["TYPE", "", "GEMS", "", "Texture&Details", ""], 
-    18: ["Prong Setting", "Flush Setting", "French Pave", "Bezel Setting", "Channel Setting", "Pavé Setting", "Micro Pavé", "Tension Setting", "Bar Setting", "Cluster Setting", "Invisible Setting", "Burnish Setting"],
-    19: ["Milgrain", "Filigree", "Hammered", "Beveled Edge", "Comfort Fit", "Engraved", "Brushed", "Matte", "Rope"]
-  };
+  const menuData = useMemo<Record<number, string[]>>(() => {
+    const names = (list: LookupItem[] | undefined) => (list || []).map(x => x.name);
+    return {
+      0: ["Rings", "Earrings", "Bracelets", "Necklace", "Body Jewelry", "Accessories"],
+      1: ["Rings", "Bands"],
+      2: names(lookups?.ring_types),
+      3: names(lookups?.bands),
+      5: ["HEAD", "MineGem", "GEMS", "", "Texture&Details", ""],
+      7: names(lookups?.head_settings),
+      8: names(lookups?.head_stone_settings),
+      9: ["Secondary Settings", "Shape", "Direction", "Size", "Count"],
+      11: names(lookups?.head_stone_settings),
+      12: names(lookups?.stone_shapes),
+      13: names(lookups?.directions),
+      14: names(lookups?.shank_types),
+      15: names(lookups?.profiles),
+      16: ["TYPE", "", "GEMS", "", "Texture&Details", ""],
+      18: names(lookups?.shank_bands_stone_settings),
+      19: names(lookups?.textures),
+    };
+  }, [lookups]);
 
   // Fetch lookup tables once on mount
   useEffect(() => {
@@ -234,7 +243,62 @@ const App: React.FC = () => {
         .catch(console.error);
     }, 300);
     return () => clearTimeout(timer);
-  }, [lookups, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems, selectedOptions]);
+  }, [lookups, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems, selectedOptions, uploadRevision]);
+
+  // Auto-select first ring when ring list loads or becomes valid
+  useEffect(() => {
+    if (rings.length > 0 && (selectedListItem === null || rings[selectedListItem - 1] === undefined)) {
+      handleListItemClick(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rings, selectedListItem]);
+
+  const handleSaveToLibrary = async () => {
+    if (!lookups) return;
+    if (!file3dm || !fileStl) { setUploadError('Please select both a 3DM file and an STL file.'); return; }
+
+    const fsId = parseInt(fingerSizeId, 10);
+    if (!fsId) { setUploadError('Enter a numeric Finger Size ID (FS id from the finger_sizes table).'); return; }
+
+    const headTextureItems  = (selectedOptions[19] || []).filter(t => !selectedShankItems.includes(t));
+    const shankTextureItems = (selectedOptions[19] || []).filter(t =>  selectedShankItems.includes(t));
+
+    const formData = new FormData();
+    formData.append('file_3dm', file3dm);
+    formData.append('file_stl', fileStl);
+    picFiles.forEach(f => formData.append('pictures', f));
+    formData.append('finger_size_id', String(fsId));
+
+    const appendIds = (key: string, names: string[], pool: LookupItem[]) =>
+      matchIds(names, pool).forEach(id => formData.append(key, String(id)));
+
+    appendIds('ring_type_ids',      selectedDetailItems,  lookups.ring_types);
+    appendIds('head_setting_ids',   selectedHeadItems,    lookups.head_settings);
+    appendIds('shank_type_ids',     selectedShankItems,   lookups.shank_types);
+    appendIds('profiles_ids',       selectedProfileItems, lookups.profiles);
+    appendIds('head_textures_ids',  headTextureItems,     lookups.textures);
+    appendIds('shank_textures_ids', shankTextureItems,    lookups.textures);
+    appendIds('bands_ids',          selectedShankItems,   lookups.bands);
+    formData.append('head_gems_json',  '[]');
+    formData.append('shank_gems_json', '[]');
+    formData.append('bands_gems_json', '[]');
+
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      await createRing(formData);
+      setIsSaveModalOpen(false);
+      setFile3dm(null);
+      setFileStl(null);
+      setPicFiles([]);
+      setFingerSizeId('');
+      setUploadRevision(r => r + 1);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const navigateTo = (idx: number | null) => {
     const target = idx === null ? 0 : idx;
@@ -441,7 +505,7 @@ const App: React.FC = () => {
   };
 
   const resetAll = useCallback(() => {
-    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsShiftPressed(false); setIsSerchExpanded(false); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(false); setEditingItemCode(null); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(1); setSelectedImage(DEFAULT_PRODUCT_IMAGE);
+    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsShiftPressed(false); setIsSerchExpanded(false); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(false); setEditingItemCode(null); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(null);
   }, []);
 
   const handleNumericCountChange = (val: string, setter: (v: string) => void) => {
@@ -486,9 +550,17 @@ const App: React.FC = () => {
 
   const handleListItemClick = useCallback((num: number) => {
     setSelectedListItem(num);
-    const existing = libraryImages[num];
-    setSelectedImage(existing || DEFAULT_PRODUCT_IMAGE);
-  }, [libraryImages]);
+    const ring = rings[num - 1];
+    if (ring) {
+      fetchRingImages(ring.id).then(imgs => {
+        setRingImages(imgs);
+        setSelectedImage(imgs[0] ?? libraryImages[num] ?? null);
+      });
+    } else {
+      setRingImages([]);
+      setSelectedImage(libraryImages[num] ?? null);
+    }
+  }, [rings, libraryImages]);
 
   const handlePrevListItem = useCallback(() => { 
     if (selectedListItem === null) { handleListItemClick(1); } 
@@ -658,9 +730,9 @@ const App: React.FC = () => {
 
   const handleBaseSizeSelect = (val: string) => { setSizeInputBuffer(val); setActiveDropdown(null); setShowSuffixMenu(true); setSelectedSizeItems([val]); };
   const handleSuffixSelect = (suffix: string) => { const newVal = sizeInputBuffer + suffix; setSizeInputBuffer(newVal); setShowSuffixMenu(false); setSelectedSizeItems([newVal]); };
-  const handleSizeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { const val = e.target.value.replace(/[^0-9.]/g, ''); const parts = val.split('.'); if (parts.length > 2) return; setSizeInputBuffer(val); const isInteger = /^\d+$/.test(val); if (isInteger && parseInt(val) <= 16) setShowSuffixMenu(true); else setShowSuffixMenu(false); if (VALID_SIZES.includes(val)) setSelectedSizeItems([val]); };
-  const handleSizeInputBlur = () => { if (!VALID_SIZES.includes(sizeInputBuffer)) setSizeInputBuffer(selectedSizeItems[0] || ""); };
-  const handleSizeInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { setShowSuffixMenu(false); const val = e.currentTarget.value; if (VALID_SIZES.includes(val)) { setSelectedSizeItems([val]); e.currentTarget.blur(); } else { setSizeInputBuffer(selectedSizeItems[0] || ""); e.currentTarget.blur(); } } };
+  const handleSizeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { const val = e.target.value.replace(/[^0-9.]/g, ''); const parts = val.split('.'); if (parts.length > 2) return; setSizeInputBuffer(val); const isInteger = /^\d+$/.test(val); if (isInteger && parseInt(val) <= 16) setShowSuffixMenu(true); else setShowSuffixMenu(false); if (validSizes.includes(val)) setSelectedSizeItems([val]); };
+  const handleSizeInputBlur = () => { if (!validSizes.includes(sizeInputBuffer)) setSizeInputBuffer(selectedSizeItems[0] || ""); };
+  const handleSizeInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { setShowSuffixMenu(false); const val = e.currentTarget.value; if (validSizes.includes(val)) { setSelectedSizeItems([val]); e.currentTarget.blur(); } else { setSizeInputBuffer(selectedSizeItems[0] || ""); e.currentTarget.blur(); } } };
 
   const currentIdx = activeMenuIndex !== null ? activeMenuIndex : 0; 
   const currentList = menuData[currentIdx] || []; 
@@ -885,33 +957,46 @@ const App: React.FC = () => {
                  </div>
               </div>
               <div className={`flex-1 flex flex-col relative overflow-hidden p-1 group ${isDarkMode ? 'bg-[#111827]' : 'bg-[#f1f5f9]'}`}>
-                 <div 
+                 <div
                    id="main-photo-viewport"
-                   onClick={handlePhotoAreaClick} 
-                   className={`w-full h-full flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative cursor-pointer group transition-none overflow-hidden`}
+                   onClick={() => selectedImage && setIsFullScreenImage(true)}
+                   className={`flex-1 w-full min-h-0 flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative cursor-pointer group transition-none overflow-hidden`}
                  >
-                    {selectedImage ? ( 
-                      <> 
-                        <div 
-                          className="absolute inset-0 opacity-40 grayscale-[10%]" 
-                          style={{ 
-                            backgroundImage: `url(${selectedImage})`, 
-                            backgroundSize: 'cover', 
-                            backgroundPosition: 'center', 
+                    {selectedImage ? (
+                      <>
+                        <div
+                          className="absolute inset-0 opacity-40 grayscale-[10%]"
+                          style={{
+                            backgroundImage: `url(${selectedImage})`,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
                             filter: 'blur(35px)',
                             transform: 'scale(1.1)'
-                          }} 
+                          }}
                         />
-                        <img 
-                          src={selectedImage} 
-                          className="relative z-10 w-full h-full object-contain drop-shadow-2xl" 
+                        <img
+                          src={selectedImage}
+                          className="relative z-10 w-full h-full object-contain drop-shadow-2xl"
                           style={{ maxHeight: '100%', maxWidth: '100%' }}
-                          alt="Selected Item" 
-                        /> 
-                        <button onClick={(e) => { e.stopPropagation(); setShowSummaryOverlay(true); setOverlayPage(1); }} className="absolute z-20 top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded transition-colors border border-white/10 group-hover:opacity-100 opacity-0 transform group-hover:scale-110"><Maximize2 size={32} /></button> 
-                      </> 
+                          alt="Selected Item"
+                        />
+                        <button onClick={(e) => { e.stopPropagation(); setShowSummaryOverlay(true); setOverlayPage(1); }} className="absolute z-20 top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded transition-colors border border-white/10 group-hover:opacity-100 opacity-0 transform group-hover:scale-110"><Maximize2 size={32} /></button>
+                      </>
                     ) : null}
                  </div>
+                 {ringImages.length > 0 && (
+                   <div className={`flex gap-2 overflow-x-auto shrink-0 p-2 ${isDarkMode ? 'bg-[#0b0f19]' : 'bg-[#e2e8f0]'}`}>
+                     {ringImages.map((url, i) => (
+                       <img
+                         key={i}
+                         src={url}
+                         alt={`view-${i + 1}`}
+                         onClick={(e) => { e.stopPropagation(); setSelectedImage(url); }}
+                         className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
+                       />
+                     ))}
+                   </div>
+                 )}
               </div>
             </div>
           </div>
@@ -1054,7 +1139,48 @@ const App: React.FC = () => {
                   );
                 })}
               </div>
-              {isSaveModalOpen && (<div className="mt-6 flex justify-center shrink-0"><button onClick={resetAll} className="px-20 py-4 bg-gray-500 text-white rounded-md text-sm font-bold uppercase tracking-[0.2em] hover:bg-gray-600 shadow-lg">OK</button></div>)}
+              {isSaveModalOpen && (
+                <div className="mt-4 shrink-0 flex flex-col gap-3">
+                  <div className="grid grid-cols-4 gap-3">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">Finger Size ID *</span>
+                      <input
+                        type="number" min="1" placeholder="FS id"
+                        value={fingerSizeId} onChange={e => setFingerSizeId(e.target.value)}
+                        className={`px-3 py-2 border text-sm font-mono w-full ${isDarkMode ? 'border-[#374151] bg-[#111827] text-white' : 'border-gray-200 bg-gray-50 text-black'}`}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 cursor-pointer">
+                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">3DM file *</span>
+                      <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>
+                        {file3dm ? file3dm.name : 'Choose .3dm…'}
+                        <input type="file" accept=".3dm" className="hidden" onChange={e => setFile3dm(e.target.files?.[0] ?? null)} />
+                      </div>
+                    </label>
+                    <label className="flex flex-col gap-1 cursor-pointer">
+                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">STL file *</span>
+                      <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>
+                        {fileStl ? fileStl.name : 'Choose .stl…'}
+                        <input type="file" accept=".stl" className="hidden" onChange={e => setFileStl(e.target.files?.[0] ?? null)} />
+                      </div>
+                    </label>
+                    <label className="flex flex-col gap-1 cursor-pointer">
+                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">Images</span>
+                      <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>
+                        {picFiles.length > 0 ? `${picFiles.length} image(s)` : 'Choose images…'}
+                        <input type="file" accept="image/*" multiple className="hidden" onChange={e => setPicFiles(Array.from(e.target.files || []))} />
+                      </div>
+                    </label>
+                  </div>
+                  {uploadError && <div className="text-red-500 text-sm font-bold px-1">{uploadError}</div>}
+                  <div className="flex justify-center gap-4">
+                    <button onClick={() => { setIsSaveModalOpen(false); setUploadError(null); }} className="px-10 py-3 bg-gray-500 text-white text-sm font-bold uppercase tracking-[0.2em] hover:bg-gray-600">CANCEL</button>
+                    <button onClick={handleSaveToLibrary} disabled={isUploading} className="px-10 py-3 bg-green-700 text-white text-sm font-bold uppercase tracking-[0.2em] hover:bg-green-800 disabled:opacity-50">
+                      {isUploading ? 'SAVING…' : 'SAVE TO LIBRARY'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

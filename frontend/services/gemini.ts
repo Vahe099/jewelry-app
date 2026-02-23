@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AIAction } from "../types";
+import { AIAction } from "../types.ts";
 
 const MODEL_NAME = 'gemini-3-flash-preview';
 
