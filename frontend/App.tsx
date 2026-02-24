@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import { fetchLookups, searchRings, createRing, matchIds, fetchRingFiles, type Ring, type Lookups, type LookupItem } from './api/jewelry.ts';
 import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import StlViewer from './components/StlViewer';
@@ -111,7 +112,7 @@ const initialConfig = (): ConfigData => ({
   redoStack: []
 });
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const detailsDropdownRef = useRef<HTMLDivElement>(null);
   const scrollListRef = useRef<HTMLDivElement>(null);
   const scrollTrackRef = useRef<HTMLDivElement>(null);
@@ -126,6 +127,34 @@ const App: React.FC = () => {
   const [targetCategoryIndex, setTargetCategoryIndex] = useState<number>(2);
   
   const [activeJewelryType, setActiveJewelryType] = useState<'ring' | 'band'>('ring');
+
+  // ── React Router: URL → state sync ─────────────────────────────────────
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (location.pathname === '/') {
+      navigate('/jewelry-type', { replace: true });
+      return;
+    }
+    const arraysEqual = (a: number[], b: number[]) =>
+      a.length === b.length && a.every((v, i) => v === b[i]);
+    const routeMap: Record<string, { idx: number; history: number[]; target?: number; type?: 'ring' | 'band' }> = {
+      '/jewelry-type': { idx: 0, history: [0]       },
+      '/type':         { idx: 1, history: [0, 1]     },
+      '/rings':        { idx: 4, history: [0, 1, 4], target: 2, type: 'ring' },
+      '/bands':        { idx: 4, history: [0, 1, 4], target: 3, type: 'band' },
+    };
+    const e = routeMap[location.pathname];
+    if (!e) return;
+    setActiveMenuIndex(prev => prev === e.idx               ? prev : e.idx);
+    setMenuHistory    (prev => arraysEqual(prev, e.history) ? prev : e.history);
+    if (e.target !== undefined) setTargetCategoryIndex(prev => prev === e.target ? prev : e.target!);
+    if (e.type   !== undefined) setActiveJewelryType  (prev => prev === e.type   ? prev : e.type!);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+  // ───────────────────────────────────────────────────────────────────────
+
   const [ringStore, setRingStore] = useState<ConfigData>(initialConfig());
   const [bandStore, setBandStore] = useState<ConfigData>(initialConfig());
 
@@ -666,15 +695,16 @@ const App: React.FC = () => {
   useEffect(() => { saveCurrentToStore(); }, [saveCurrentToStore]);
 
   const toggleOption = (categoryIndex: number, option: string, isRemoval: boolean) => {
+    console.log('[toggleOption] pathname:', location.pathname, '| categoryIndex:', categoryIndex, '| option:', option);
     if (!option) return;
-    if (categoryIndex === 0 && option === "Rings") { navigateTo(1); return; }
+    if (categoryIndex === 0 && option === "Rings") { navigate('/type'); return; }
     if (categoryIndex === 1) { 
       const newType = (option === "Rings") ? 'ring' : 'band'; 
       const newTarget = (option === "Rings") ? 2 : 3; 
       if (newType !== activeJewelryType) { setActiveJewelryType(newType); setTargetCategoryIndex(newTarget); loadFromStore(newType); } 
-      else setTargetCategoryIndex(newTarget); 
-      navigateTo(4); 
-      return; 
+      else setTargetCategoryIndex(newTarget);
+      navigate(option === "Rings" ? '/rings' : '/bands');
+      return;
     }
     if (categoryIndex === 5) { 
       if (option === "MineGem") { setGemBuilderType('main'); setEditingItemCode(null); navigateTo(6); return; } 
@@ -1092,7 +1122,7 @@ const App: React.FC = () => {
 
               return (
                 <div key={`type-${index}`} className={`flex flex-col items-center justify-center gap-2 break-inside-avoid ${currentIdx === 0 && ["Necklace", "Body Jewelry", "Accessories"].includes(type) ? 'mt-8' : ''}`}>
-                  <button disabled={isRestricted} onClick={() => !isRestricted && toggleOption(currentIdx, type, isSelected)} className={finalBtnClass}>
+                  <button disabled={isRestricted} onClick={() => { console.log('[button onClick] currentIdx:', currentIdx, '| type:', type); !isRestricted && toggleOption(currentIdx, type, isSelected); }} className={finalBtnClass}>
                     {type}
                   </button>
                 </div>
@@ -1226,5 +1256,11 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+const App: React.FC = () => (
+  <BrowserRouter>
+    <AppContent />
+  </BrowserRouter>
+);
 
 export default App;
