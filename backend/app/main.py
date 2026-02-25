@@ -13,10 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, desc, func
 
-from .db import SessionLocal
+from .db import SessionLocal, engine
 from . import models
+from .models import Base
+from .auth import get_current_user, hash_password, verify_password, create_access_token
 
 from uuid import uuid4
+from pydantic import BaseModel
 import shutil
 import json
 import os
@@ -36,6 +39,12 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
 app = FastAPI(title="Jewelry Web (FastAPI + HTML)")
+
+
+@app.on_event("startup")
+def create_tables():
+    Base.metadata.create_all(bind=engine)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,6 +70,46 @@ def get_db():
         db.close()
 
 DEBUG_PAGES = os.getenv("DEBUG_PAGES", "1") == "1"
+
+
+# -------------------------
+# Auth request body
+# -------------------------
+class AuthBody(BaseModel):
+    email: str
+    password: str
+
+
+# -------------------------
+# Auth endpoints
+# -------------------------
+@app.post("/api/auth/register")
+def auth_register(body: AuthBody, db: Session = Depends(get_db)):
+    if db.execute(select(models.User).where(models.User.email == body.email)).scalar_one_or_none():
+        raise HTTPException(400, "Email already registered")
+    user = models.User(email=body.email, password_hash=hash_password(body.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    token = create_access_token({"sub": user.email})
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.post("/api/auth/login")
+def auth_login(body: AuthBody, db: Session = Depends(get_db)):
+    user = db.execute(
+        select(models.User).where(models.User.email == body.email)
+    ).scalar_one_or_none()
+    if not user or not user.is_active or not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Invalid credentials")
+    token = create_access_token({"sub": user.email})
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.get("/api/auth/me")
+def auth_me(current_user: models.User = Depends(get_current_user)):
+    return {"email": current_user.email, "is_active": current_user.is_active}
+
 
 # -------------------------
 # Lookups API (used by React frontend)
@@ -450,6 +499,7 @@ def create_ring_submit(
     bands_gems_json: str = Form(default="[]"),
 
     db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
 ):
     head_gems: List[Dict[str, Any]] = json.loads(head_gems_json or "[]")
     shank_gems: List[Dict[str, Any]] = json.loads(shank_gems_json or "[]")

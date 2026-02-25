@@ -5,13 +5,27 @@ from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import (
-    Table, Column, Integer, String, DateTime, ForeignKey, DECIMAL
+    Table, Column, Integer, String, DateTime, ForeignKey, DECIMAL, Boolean
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
+
+
+# -------------------------
+# Auth: users
+# -------------------------
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 # -------------------------
