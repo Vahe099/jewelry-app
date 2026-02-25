@@ -2,6 +2,18 @@
 // Set VITE_API_BASE_URL in .env.local; falls back to direct localhost for dev.
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8000';
 
+// ── Auth token helpers ────────────────────────────────────────────────────
+export function setAuthToken(token: string): void {
+  localStorage.setItem('auth_token', token);
+}
+export function getAuthToken(): string | null {
+  return localStorage.getItem('auth_token');
+}
+export function clearAuthToken(): void {
+  localStorage.removeItem('auth_token');
+}
+// ─────────────────────────────────────────────────────────────────────────
+
 export interface LookupItem {
   id: number;
   name: string;
@@ -89,10 +101,12 @@ export async function searchRings(
 export async function createRing(
   formData: FormData,
 ): Promise<{ ok: boolean; rings_id: number; code: number }> {
+  const token = getAuthToken();
   const res = await fetch(`${API_BASE}/create-ring`, {
     method: 'POST',
     body: formData,
     // No Content-Type header — browser sets it with the correct multipart boundary.
+    ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -116,4 +130,49 @@ export async function fetchRingFiles(ringId: number): Promise<{ images: string[]
     images: data.images.map(p => `${API_BASE}${p}`),
     stl: data.stl ? `${API_BASE}${data.stl}` : null,
   };
+}
+
+// ── Auth API functions ────────────────────────────────────────────────────
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+}
+
+export async function register(email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Register failed: ${res.status}`);
+  }
+  const data: AuthResponse = await res.json();
+  setAuthToken(data.access_token);
+  return data;
+}
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Login failed: ${res.status}`);
+  }
+  const data: AuthResponse = await res.json();
+  setAuthToken(data.access_token);
+  return data;
+}
+
+export async function me(): Promise<{ email: string; is_active: boolean }> {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/api/auth/me`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`me() failed: ${res.status}`);
+  return res.json();
 }

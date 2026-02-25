@@ -87,7 +87,7 @@ class AuthBody(BaseModel):
 def auth_register(body: AuthBody, db: Session = Depends(get_db)):
     if db.execute(select(models.User).where(models.User.email == body.email)).scalar_one_or_none():
         raise HTTPException(400, "Email already registered")
-    user = models.User(email=body.email, password_hash=hash_password(body.password))
+    user = models.User(email=body.email, password_hash=hash_password(body.password), role="uploader")
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -108,7 +108,7 @@ def auth_login(body: AuthBody, db: Session = Depends(get_db)):
 
 @app.get("/api/auth/me")
 def auth_me(current_user: models.User = Depends(get_current_user)):
-    return {"email": current_user.email, "is_active": current_user.is_active}
+    return {"email": current_user.email, "is_active": current_user.is_active, "role": current_user.role}
 
 
 # -------------------------

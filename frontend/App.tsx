@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
-import { fetchLookups, searchRings, createRing, matchIds, fetchRingFiles, type Ring, type Lookups, type LookupItem } from './api/jewelry.ts';
-import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
+import { fetchLookups, searchRings, createRing, matchIds, fetchRingFiles, login, register, me, getAuthToken, clearAuthToken, type Ring, type Lookups, type LookupItem } from './api/jewelry.ts';
+import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2, LogOut } from 'lucide-react';
 import StlViewer from './components/StlViewer';
 
 // Custom Folder Icon component - Updated to be slightly smaller and ignore blue highlight on selection
@@ -127,6 +127,12 @@ const AppContent: React.FC = () => {
   const [targetCategoryIndex, setTargetCategoryIndex] = useState<number>(2);
   
   const [activeJewelryType, setActiveJewelryType] = useState<'ring' | 'band'>('ring');
+
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [loginEmail, setLoginEmail] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState<boolean>(false);
 
   // ── React Router: URL → state sync ─────────────────────────────────────
   const location = useLocation();
@@ -262,6 +268,12 @@ const AppContent: React.FC = () => {
     fetchLookups().then(setLookups).catch(console.error);
   }, []);
 
+  // Restore user session on mount
+  useEffect(() => {
+    if (!getAuthToken()) return;
+    me().then(data => setUserEmail(data.email)).catch(() => clearAuthToken());
+  }, []);
+
   // Re-run search whenever lookups are ready or any filter changes (debounced 300 ms)
   useEffect(() => {
     if (!lookups) return;
@@ -287,6 +299,11 @@ const AppContent: React.FC = () => {
 
   const handleSaveToLibrary = async () => {
     if (!lookups) return;
+    if (!userEmail) {
+      setUploadError(null);
+      navigate('/login');
+      return;
+    }
     if (!file3dm || !fileStl) { setUploadError('Please select both a 3DM file and an STL file.'); return; }
 
     const fsId = parseInt(fingerSizeId, 10);
@@ -326,7 +343,14 @@ const AppContent: React.FC = () => {
       setFingerSizeId('');
       setUploadRevision(r => r + 1);
     } catch (e) {
-      setUploadError(e instanceof Error ? e.message : 'Upload failed');
+      const msg = e instanceof Error ? e.message : '';
+      if (msg.includes('401') || msg.includes('403') || msg.includes('Not authenticated')) {
+        setUploadError(null);
+        setIsSaveModalOpen(false);
+        navigate('/login');
+      } else {
+        setUploadError(msg || 'Upload failed');
+      }
     } finally {
       setIsUploading(false);
     }
@@ -695,7 +719,6 @@ const AppContent: React.FC = () => {
   useEffect(() => { saveCurrentToStore(); }, [saveCurrentToStore]);
 
   const toggleOption = (categoryIndex: number, option: string, isRemoval: boolean) => {
-    console.log('[toggleOption] pathname:', location.pathname, '| categoryIndex:', categoryIndex, '| option:', option);
     if (!option) return;
     if (categoryIndex === 0 && option === "Rings") { navigate('/type'); return; }
     if (categoryIndex === 1) { 
@@ -812,6 +835,29 @@ const AppContent: React.FC = () => {
   );
 
   const renderCurrentView = () => {
+    if (location.pathname === '/login') {
+      return (
+        <div className="flex-1 flex items-center justify-center w-full">
+          <div className={`w-full max-w-sm p-8 border ${isDarkMode ? 'border-[#1e293b] bg-[#1f2937]' : 'border-[#e2e8f0] bg-[#f8fafc]'}`}>
+            <div className="flex items-center mb-6">
+              <button onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/jewelry-type'); }} className={`text-xs font-black opacity-60 hover:opacity-100 transition-opacity mr-3 ${isDarkMode ? 'text-white' : 'text-black'}`}>✕</button>
+              <h2 className={`text-2xl font-black uppercase tracking-widest flex-1 text-center ${isDarkMode ? 'text-white' : 'text-black'}`}>Login</h2>
+            </div>
+            <div className="flex flex-col gap-3">
+              <input type="email" placeholder="Email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={`px-4 py-2 border text-sm font-bold bg-transparent outline-none ${isDarkMode ? 'border-[#374151] text-white placeholder-gray-500' : 'border-[#cbd5e1] text-black placeholder-gray-400'}`} />
+              <input type="password" placeholder="Password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={`px-4 py-2 border text-sm font-bold bg-transparent outline-none ${isDarkMode ? 'border-[#374151] text-white placeholder-gray-500' : 'border-[#cbd5e1] text-black placeholder-gray-400'}`} />
+              {loginError && <p className="text-red-500 text-xs font-bold">{loginError}</p>}
+              <button disabled={loginLoading} onClick={async () => { setLoginError(null); setLoginLoading(true); try { await login(loginEmail, loginPassword); const d = await me(); setUserEmail(d.email); navigate('/jewelry-type'); } catch (err: any) { setLoginError(err.message || 'Login failed'); } finally { setLoginLoading(false); } }} className="px-4 py-2 font-black uppercase tracking-widest text-sm bg-green-700 text-white hover:bg-green-800 disabled:opacity-50">
+                {loginLoading ? '...' : 'Login'}
+              </button>
+              <button disabled className={`px-4 py-2 font-black uppercase tracking-widest text-sm border opacity-30 cursor-not-allowed ${isDarkMode ? 'border-[#374151] text-gray-400' : 'border-[#cbd5e1] text-gray-600'}`}>
+                Register
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     if (currentIdx === 4) {
       const currentRing = (showSummaryOverlay && selectedListItem !== null)
         ? (rings[selectedListItem - 1] ?? null) : null;
@@ -868,7 +914,7 @@ const AppContent: React.FC = () => {
           <div className={`grid ${isBand ? 'grid-cols-3' : 'grid-cols-5'} w-full px-10 gap-x-4 mb-4 mt-2 shrink-0`}>
             <div className={isBand ? "col-span-2" : "col-span-4"} />
             <div className="flex items-center justify-center">
-              <button onClick={() => setIsSaveModalOpen(true)} className="bg-[#166534] hover:bg-[#14532d] text-white px-10 py-2 rounded-sm text-2xl font-black uppercase tracking-[0.1em] transition-all transform active:scale-95 shadow-lg whitespace-nowrap">ADD TO LIB</button>
+              <button onClick={() => { if (!userEmail) { navigate('/login'); return; } setIsSaveModalOpen(true); }} className="bg-[#166534] hover:bg-[#14532d] text-white px-10 py-2 rounded-sm text-2xl font-black uppercase tracking-[0.1em] transition-all transform active:scale-95 shadow-lg whitespace-nowrap">ADD TO LIB</button>
             </div>
           </div>
 
@@ -1122,7 +1168,7 @@ const AppContent: React.FC = () => {
 
               return (
                 <div key={`type-${index}`} className={`flex flex-col items-center justify-center gap-2 break-inside-avoid ${currentIdx === 0 && ["Necklace", "Body Jewelry", "Accessories"].includes(type) ? 'mt-8' : ''}`}>
-                  <button disabled={isRestricted} onClick={() => { console.log('[button onClick] currentIdx:', currentIdx, '| type:', type); !isRestricted && toggleOption(currentIdx, type, isSelected); }} className={finalBtnClass}>
+                  <button disabled={isRestricted} onClick={() => { !isRestricted && toggleOption(currentIdx, type, isSelected); }} className={finalBtnClass}>
                     {type}
                   </button>
                 </div>
@@ -1140,7 +1186,15 @@ const AppContent: React.FC = () => {
       <div className={`w-full flex flex-col items-center duration-0 ${isAnyModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <header className={`fixed top-0 left-0 right-0 h-10 flex items-center justify-between px-0 z-50 transform ${isDarkMode ? 'bg-[#1f2937]' : 'bg-[#e5e7eb] border-b border-[#d1d5db]'} shadow-sm`}>
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><h1 className="text-xl font-black uppercase tracking-[0.35em] leading-none text-gray-500 transition-all duration-300">SLS LIBRARY</h1></div>
-          <div className="flex items-center h-full pr-4 z-10 ml-auto">
+          <div className="flex items-center h-full pr-4 z-10 ml-auto gap-3">
+            {userEmail ? (
+              <>
+                <span className={`text-xs font-bold tracking-wider truncate max-w-[160px] ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{userEmail}</span>
+                <button onClick={() => { clearAuthToken(); setUserEmail(null); navigate('/login'); }} title="Logout" className={`opacity-60 hover:opacity-100 transition-opacity ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}><LogOut size={14} /></button>
+              </>
+            ) : (
+              <button onClick={() => navigate('/login')} className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 border ${isDarkMode ? 'border-gray-600 text-gray-400 hover:text-white' : 'border-gray-400 text-gray-600 hover:text-black'}`}>Login</button>
+            )}
             <div onClick={() => setIsDarkMode(!isDarkMode)} className={`relative flex items-center w-12 h-6 rounded-full border p-0.5 cursor-pointer transition-colors ${isDarkMode ? 'bg-[#111827] border-[#374151]' : 'bg-[#ffffff] border-[#cbd5e1]'} shadow-sm`}>
               <div className={`absolute w-4 h-4 rounded-full transform flex items-center justify-center shadow-md transition-transform duration-200 ${isDarkMode ? 'translate-x-0 bg-[#374151] text-white' : 'translate-x-7 bg-white text-[#f59e0b]'}`}>{isDarkMode ? <Moon size={10} /> : <Sun size={10} />}</div>
             </div>
@@ -1152,7 +1206,7 @@ const AppContent: React.FC = () => {
             {activeMenuIndex !== 0 && activeMenuIndex !== null && ( 
               <> 
                 <button onClick={handleOldSchemeBack} onContextMenu={(e) => { e.preventDefault(); handleHistoryBack(); }} className={`fixed left-10 top-14 flex items-center justify-center transition-opacity hover:opacity-70 z-50 ${isDarkMode ? 'text-white' : 'text-black'}`}><ArrowLeft size={32} strokeWidth={2.5} /></button> 
-                <button onClick={() => resetAll()} className={`fixed right-10 top-14 flex items-center justify-center transition-opacity hover:opacity-70 z-50 ${isDarkMode ? 'text-white' : 'text-black'}`}><X size={32} strokeWidth={2.5} /></button> 
+                <button onClick={() => location.pathname === '/login' ? navigate('/jewelry-type') : resetAll()} className={`fixed right-10 top-14 flex items-center justify-center transition-opacity hover:opacity-70 z-50 ${isDarkMode ? 'text-white' : 'text-black'}`}><X size={32} strokeWidth={2.5} /></button> 
               </> 
             )}
             {renderCurrentView()}
