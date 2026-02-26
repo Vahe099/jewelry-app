@@ -120,7 +120,6 @@ const AppContent: React.FC = () => {
   
   const [activeMenuIndex, setActiveMenuIndex] = useState<number | null>(0);
   const [menuHistory, setMenuHistory] = useState<number[]>([0]);
-  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [isSerchExpanded, setIsSerchExpanded] = useState(false);
@@ -336,7 +335,6 @@ const AppContent: React.FC = () => {
     setUploadError(null);
     try {
       await createRing(formData);
-      setIsSaveModalOpen(false);
       setFile3dm(null);
       setFileStl(null);
       setPicFiles([]);
@@ -346,7 +344,6 @@ const AppContent: React.FC = () => {
       const msg = e instanceof Error ? e.message : '';
       if (msg.includes('401') || msg.includes('403') || msg.includes('Not authenticated')) {
         setUploadError(null);
-        setIsSaveModalOpen(false);
         navigate('/login');
       } else {
         setUploadError(msg || 'Upload failed');
@@ -432,7 +429,6 @@ const AppContent: React.FC = () => {
   }, [selectedShankItems]);
 
   const handleEditItem = (categoryIndex: number, item: string) => {
-    setIsSaveModalOpen(false); 
     if (prepareEditState(item)) {
       if (item.includes('_')) { navigateTo(item.startsWith("SEC_") ? 9 : 6); } else {
         if ([5, 7, 8].includes(categoryIndex)) { if (menuData[7].includes(item) || item === "Head Setting") { navigateTo(7); return; } if (menuData[8].includes(item)) { navigateTo(8); return; } navigateTo(5); return; }
@@ -691,7 +687,6 @@ const AppContent: React.FC = () => {
         else resetAll(); 
         return; 
       }
-      if (isSaveModalOpen) return;
       if (e.key === 'Shift' && !e.repeat && !isInputFocused) setIsShiftPressed(true);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); handleUndo(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); }
@@ -714,7 +709,7 @@ const AppContent: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); window.addEventListener('mousedown', handleClickOutside);
     return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); window.removeEventListener('mousedown', handleClickOutside); };
-  }, [handleUndo, handleRedo, isSaveModalOpen, resetAll, activeDropdown, showSuffixMenu, activeMenuIndex, handleAcceptMainGems, handleAcceptSecondaryGems, showSummaryOverlay, isFullScreenImage, handlePrevListItem, handleNextListItem, overlayPage]);
+  }, [handleUndo, handleRedo, resetAll, activeDropdown, showSuffixMenu, activeMenuIndex, handleAcceptMainGems, handleAcceptSecondaryGems, showSummaryOverlay, isFullScreenImage, handlePrevListItem, handleNextListItem, overlayPage]);
 
   useEffect(() => { saveCurrentToStore(); }, [saveCurrentToStore]);
 
@@ -797,7 +792,7 @@ const AppContent: React.FC = () => {
   const currentIdx = activeMenuIndex !== null ? activeMenuIndex : 0; 
   const currentList = menuData[currentIdx] || []; 
   const currentTitle = menuLabels[currentIdx] || "Jewelry Type"; 
-  const isAnyModalOpen = isSaveModalOpen || isShiftPressed; 
+  const isAnyModalOpen = isShiftPressed;
   const isBand = targetCategoryIndex === 3;
 
   const renderBuilder = (title: string, type: 'main' | 'secondary', settings: string[], setSettings: (v: any) => void, shapes: string[], setShapes: (v: any) => void, directions: string[], setDirections: (v: any) => void, size: string, setSize: (v: string) => void, count: string, setCount: (v: string) => void, onAccept: () => void, settingsIndex: number) => (
@@ -876,6 +871,38 @@ const AppContent: React.FC = () => {
              <div className="flex justify-center" onClick={() => setActivePreviewTab('STL')}><div className={`px-6 py-1 border cursor-pointer hover:opacity-80 transition-opacity ${activePreviewTab === 'STL' ? (isDarkMode ? 'bg-[#1a263d] border-[#38bdf8]' : 'bg-[#e0f2fe] border-[#0284c7]') : (isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]')}`}><span className={`text-2xl font-black italic tracking-widest uppercase ${activePreviewTab === 'STL' ? 'text-[#38bdf8]' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>STL</span></div></div>
              <div className="flex justify-center" onClick={() => setActivePreviewTab('IMAGE')}><div className={`px-6 py-1 border cursor-pointer hover:opacity-80 transition-opacity ${activePreviewTab === 'IMAGE' ? (isDarkMode ? 'bg-[#1a263d] border-[#38bdf8]' : 'bg-[#e0f2fe] border-[#0284c7]') : (isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]')}`}><span className={`text-2xl font-black italic tracking-widest uppercase ${activePreviewTab === 'IMAGE' ? 'text-[#38bdf8]' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>IMAGE</span></div></div>
           </div>
+          {userEmail && (
+            <div className="w-full px-10 mb-4 shrink-0 flex flex-col gap-3">
+              <div className="grid grid-cols-4 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-bold uppercase tracking-wider opacity-60">Finger Size ID *</span>
+                  <select value={fingerSizeId} onChange={e => setFingerSizeId(e.target.value)} className={`px-3 py-2 border text-sm font-mono w-full ${isDarkMode ? 'border-[#374151] bg-[#111827] text-white' : 'border-gray-200 bg-gray-50 text-black'}`}>
+                    <option value="">Select…</option>
+                    {(lookups?.finger_sizes || []).map(fs => (
+                      <option key={fs.id} value={String(fs.id)}>{fs.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 cursor-pointer">
+                  <span className="text-xs font-bold uppercase tracking-wider opacity-60">3DM file *</span>
+                  <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>{file3dm ? file3dm.name : 'Choose .3dm…'}<input type="file" accept=".3dm" className="hidden" onChange={e => setFile3dm(e.target.files?.[0] ?? null)} /></div>
+                </label>
+                <label className="flex flex-col gap-1 cursor-pointer">
+                  <span className="text-xs font-bold uppercase tracking-wider opacity-60">STL file *</span>
+                  <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>{fileStl ? fileStl.name : 'Choose .stl…'}<input type="file" accept=".stl" className="hidden" onChange={e => setFileStl(e.target.files?.[0] ?? null)} /></div>
+                </label>
+                <label className="flex flex-col gap-1 cursor-pointer">
+                  <span className="text-xs font-bold uppercase tracking-wider opacity-60">Images</span>
+                  <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>{picFiles.length > 0 ? `${picFiles.length} image(s)` : 'Choose images…'}<input type="file" accept="image/*" multiple className="hidden" onChange={e => setPicFiles(Array.from(e.target.files || []))} /></div>
+                </label>
+              </div>
+              {uploadError && <div className="text-red-500 text-sm font-bold px-1">{uploadError}</div>}
+              <div className="flex justify-center gap-4">
+                <button onClick={() => { setFile3dm(null); setFileStl(null); setPicFiles([]); setUploadError(null); setFingerSizeId(''); }} className="px-10 py-3 bg-gray-500 text-white text-sm font-bold uppercase tracking-[0.2em] hover:bg-gray-600">CANCEL</button>
+                <button onClick={handleSaveToLibrary} disabled={isUploading} className="px-10 py-3 bg-green-700 text-white text-sm font-bold uppercase tracking-[0.2em] hover:bg-green-800 disabled:opacity-50">{isUploading ? 'SAVING…' : 'SAVE TO LIBRARY'}</button>
+              </div>
+            </div>
+          )}
           <div className={`grid ${isBand ? 'grid-cols-3' : 'grid-cols-5'} w-full px-10 gap-x-4 mb-4`}>
             <div className="flex flex-col items-center">
               <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>TYPE</span>
@@ -911,12 +938,6 @@ const AppContent: React.FC = () => {
             </div>
           </div>
           
-          <div className={`grid ${isBand ? 'grid-cols-3' : 'grid-cols-5'} w-full px-10 gap-x-4 mb-4 mt-2 shrink-0`}>
-            <div className={isBand ? "col-span-2" : "col-span-4"} />
-            <div className="flex items-center justify-center">
-              <button onClick={() => { if (!userEmail) { navigate('/login'); return; } setIsSaveModalOpen(true); }} className="bg-[#166534] hover:bg-[#14532d] text-white px-10 py-2 rounded-sm text-2xl font-black uppercase tracking-[0.1em] transition-all transform active:scale-95 shadow-lg whitespace-nowrap">ADD TO LIB</button>
-            </div>
-          </div>
 
           <div className={`mt-auto w-full flex flex-col border-t ${isDarkMode ? 'bg-[#0b0f19] border-[#1e293b]' : 'bg-[#f1f5f9] border-[#cbd5e1]'} relative`}>
             {showSummaryOverlay && (
@@ -1217,7 +1238,6 @@ const AppContent: React.FC = () => {
       {isAnyModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center p-4">
           <div className={`w-[96vw] h-[92vh] rounded-lg shadow-2xl relative flex flex-col overflow-hidden ${isDarkMode ? 'bg-[#1f2937] text-white' : 'bg-white text-black'}`}>
-            {isSaveModalOpen && (<button onClick={() => setIsSaveModalOpen(false)} className="absolute top-4 right-4 text-[#ef4444] p-1 z-[110]"><X size={28} strokeWidth={3} /></button>)}
             <div className="pt-10 px-8 pb-8 flex flex-col h-full overflow-hidden">
               <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:min-h-0 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-6 gap-y-4 p-2 hide-scrollbar">
                 {menuLabels.map((label, index) => {
@@ -1242,48 +1262,6 @@ const AppContent: React.FC = () => {
                   );
                 })}
               </div>
-              {isSaveModalOpen && (
-                <div className="mt-4 shrink-0 flex flex-col gap-3">
-                  <div className="grid grid-cols-4 gap-3">
-                    <label className="flex flex-col gap-1">
-                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">Finger Size ID *</span>
-                      <input
-                        type="number" min="1" placeholder="FS id"
-                        value={fingerSizeId} onChange={e => setFingerSizeId(e.target.value)}
-                        className={`px-3 py-2 border text-sm font-mono w-full ${isDarkMode ? 'border-[#374151] bg-[#111827] text-white' : 'border-gray-200 bg-gray-50 text-black'}`}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 cursor-pointer">
-                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">3DM file *</span>
-                      <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>
-                        {file3dm ? file3dm.name : 'Choose .3dm…'}
-                        <input type="file" accept=".3dm" className="hidden" onChange={e => setFile3dm(e.target.files?.[0] ?? null)} />
-                      </div>
-                    </label>
-                    <label className="flex flex-col gap-1 cursor-pointer">
-                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">STL file *</span>
-                      <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>
-                        {fileStl ? fileStl.name : 'Choose .stl…'}
-                        <input type="file" accept=".stl" className="hidden" onChange={e => setFileStl(e.target.files?.[0] ?? null)} />
-                      </div>
-                    </label>
-                    <label className="flex flex-col gap-1 cursor-pointer">
-                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">Images</span>
-                      <div className={`px-3 py-2 border text-sm font-mono truncate ${isDarkMode ? 'border-[#374151] bg-[#111827]' : 'border-gray-200 bg-gray-50'}`}>
-                        {picFiles.length > 0 ? `${picFiles.length} image(s)` : 'Choose images…'}
-                        <input type="file" accept="image/*" multiple className="hidden" onChange={e => setPicFiles(Array.from(e.target.files || []))} />
-                      </div>
-                    </label>
-                  </div>
-                  {uploadError && <div className="text-red-500 text-sm font-bold px-1">{uploadError}</div>}
-                  <div className="flex justify-center gap-4">
-                    <button onClick={() => { setIsSaveModalOpen(false); setUploadError(null); }} className="px-10 py-3 bg-gray-500 text-white text-sm font-bold uppercase tracking-[0.2em] hover:bg-gray-600">CANCEL</button>
-                    <button onClick={handleSaveToLibrary} disabled={isUploading} className="px-10 py-3 bg-green-700 text-white text-sm font-bold uppercase tracking-[0.2em] hover:bg-green-800 disabled:opacity-50">
-                      {isUploading ? 'SAVING…' : 'SAVE TO LIBRARY'}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
