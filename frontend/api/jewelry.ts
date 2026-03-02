@@ -28,9 +28,17 @@ export interface Lookups {
   bands: LookupItem[];
   finger_sizes: LookupItem[];
   head_stone_settings: LookupItem[];
-  shank_bands_stone_settings: LookupItem[];
+  shank_stone_settings: LookupItem[];
   stone_shapes: LookupItem[];
   directions: LookupItem[];
+}
+
+export interface RingGem {
+  settings: string;
+  shape: string;
+  direction: string;
+  size: string;
+  count: number;
 }
 
 export interface Ring {
@@ -44,7 +52,10 @@ export interface Ring {
   head_setting_names: string[];
   shank_type_names: string[];
   profile_names: string[];
-  texture_names: string[];
+  head_texture_names: string[];
+  shank_texture_names: string[];
+  head_gem: RingGem | null;
+  shank_gems: RingGem[];
 }
 
 export interface SearchFilters {
@@ -54,6 +65,7 @@ export interface SearchFilters {
   selectedProfileItems: string[];
   headTextureItems: string[];
   shankTextureItems: string[];
+  type_mode?: 'rings' | 'bands';
 }
 
 // Case-insensitive name → ID matching.
@@ -87,6 +99,7 @@ export async function searchRings(
     shank_textures_ids: matchIds(filters.shankTextureItems,   lookups.textures),
     bands_ids:          matchIds(filters.selectedShankItems,  lookups.bands),
     bands_textures_ids: [],
+    type_mode:          filters.type_mode,
   };
 
   const res = await fetch(`${API_BASE}/api/rings/search`, {

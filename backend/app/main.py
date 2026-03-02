@@ -57,6 +57,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=str(PROJECT_DIR / "static")), name="static")
 app.mount("/media", StaticFiles(directory=str(SAVE_PICS)), name="media")
 app.mount("/stl", StaticFiles(directory=str(SAVE_STL)), name="stl")
+app.mount("/3dm", StaticFiles(directory=str(SAVE_3DM)), name="3dm")
 templates = Jinja2Templates(directory=str(PROJECT_DIR / "templates"))
 
 # -------------------------
@@ -130,8 +131,9 @@ def get_lookups(db: Session = Depends(get_db)):
         "textures":      rows(models.TexturesDetails, "textures_details_name"),
         "bands":         rows(models.Bands,           "band_name"),
         "finger_sizes":  rows(models.FingerSizes,     "finger_sizes_name"),
+        "us_sizes":      rows(models.FingerSizes,     "finger_sizes_name"),
         "head_stone_settings":        rows(models.HeadStoneSetting,      "name"),
-        "shank_bands_stone_settings": rows(models.ShankBandsStoneSetting, "name"),
+        "shank_stone_settings": rows(models.ShankStoneSetting, "name"),
         "stone_shapes":               rows(models.StoneShape,             "stone_shape_name"),
         "directions":                 rows(models.Directions,             "directions_name"),
     }
@@ -267,7 +269,6 @@ def rings_debug(request: Request, db: Session = Depends(get_db), limit: int = 20
             selectinload(models.Rings.shank_gems),
             selectinload(models.Rings.bands),
             selectinload(models.Rings.bands_textures),
-            selectinload(models.Rings.bands_gems),
         )
         .order_by(desc(models.Rings.id))
         .limit(limit)
@@ -357,13 +358,10 @@ def rings_debug(request: Request, db: Session = Depends(get_db), limit: int = 20
             for g in r.head_gems
         ]
         shank_gems_rows = [
-            [g.id, g.shank_bands_stone_setting_id, g.stone_shape_id, g.directions_id, g.stone_size, g.stone_count]
+            [g.id, g.shank_stone_setting_id, g.stone_shape_id, g.directions_id, g.stone_size, g.stone_count]
             for g in r.shank_gems
         ]
-        bands_gems_rows = [
-            [g.id, g.shank_bands_stone_setting_id, g.stone_shape_id, g.directions_id, g.stone_size, g.stone_count]
-            for g in r.bands_gems
-        ]
+        bands_gems_rows = []
 
         page.append("<div class='card'>")
         page.append(f"<h3>Ring ID: {r.id}</h3>")
@@ -419,14 +417,14 @@ def rings_debug(request: Request, db: Session = Depends(get_db), limit: int = 20
 
         page.append("<div class='sub'><details open><summary>shank_gems</summary>")
         page.append(table_simple(
-            ["id", "shank_bands_stone_setting_id", "stone_shape_id", "directions_id", "stone_size", "stone_count"],
+            ["id", "shank_stone_setting_id", "stone_shape_id", "directions_id", "stone_size", "stone_count"],
             shank_gems_rows or [["-", "-", "-", "-", "-", "-"]],
         ))
         page.append("</details></div>")
 
         page.append("<div class='sub'><details open><summary>bands_gems</summary>")
         page.append(table_simple(
-            ["id", "shank_bands_stone_setting_id", "stone_shape_id", "directions_id", "stone_size", "stone_count"],
+            ["id", "shank_stone_setting_id", "stone_shape_id", "directions_id", "stone_size", "stone_count"],
             bands_gems_rows or [["-", "-", "-", "-", "-", "-"]],
         ))
         page.append("</details></div>")
@@ -496,14 +494,43 @@ def create_ring_submit(
 
     head_gems_json: str = Form(default="[]"),
     shank_gems_json: str = Form(default="[]"),
-    bands_gems_json: str = Form(default="[]"),
 
     db: Session = Depends(get_db),
     _: models.User = Depends(get_current_user),
 ):
     head_gems: List[Dict[str, Any]] = json.loads(head_gems_json or "[]")
     shank_gems: List[Dict[str, Any]] = json.loads(shank_gems_json or "[]")
-    bands_gems: List[Dict[str, Any]] = json.loads(bands_gems_json or "[]")
+
+    def _safe_int(val) -> Optional[int]:
+        try:
+            return int(val) if val is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    # Validate required fields before touching any files or DB
+    _missing: list[str] = []
+    if head_gems:
+        g0 = head_gems[0]
+        if not _safe_int(g0.get("head_stone_setting_id")): _missing.append("MAIN GEM → SETTINGS")
+        if not _safe_int(g0.get("stone_shape_id")):        _missing.append("MAIN GEM → SHAPE")
+        if not _safe_int(g0.get("directions_id")):          _missing.append("MAIN GEM → DIRECTION")
+        if not str(g0.get("stone_size", "")).strip():       _missing.append("MAIN GEM → SIZE")
+        try:
+            if int(g0.get("stone_count", 0)) <= 0:          _missing.append("MAIN GEM → COUNT")
+        except (TypeError, ValueError):                     _missing.append("MAIN GEM → COUNT")
+    if shank_gems:
+        g = shank_gems[0]
+        _s_touched = any([_safe_int(g.get("shank_stone_setting_id")),
+                          _safe_int(g.get("stone_shape_id")),
+                          _safe_int(g.get("directions_id")),
+                          str(g.get("stone_size", "")).strip()])
+        if _s_touched:
+            if not _safe_int(g.get("shank_stone_setting_id")): _missing.append("SHANK GEMS → SETTINGS")
+            if not _safe_int(g.get("stone_shape_id")):         _missing.append("SHANK GEMS → SHAPE")
+            if not _safe_int(g.get("directions_id")):          _missing.append("SHANK GEMS → DIRECTION")
+            if not str(g.get("stone_size", "")).strip():       _missing.append("SHANK GEMS → SIZE")
+    if _missing:
+        raise HTTPException(422, detail={"message": "Missing required fields", "missing": _missing})
 
     def safe_ext(filename: str) -> str:
         return Path(filename or "").suffix.lower()
@@ -619,34 +646,35 @@ def create_ring_submit(
             return 1 if c <= 0 else c
 
         for g in head_gems:
+            sid = _safe_int(g.get("head_stone_setting_id"))
+            shid = _safe_int(g.get("stone_shape_id"))
+            did = _safe_int(g.get("directions_id"))
+            if not sid or not shid or not did:
+                continue
             db.add(models.HeadGems(
                 rings_id=rings_id,
-                head_stone_setting_id=int(g["head_stone_setting_id"]),
-                stone_shape_id=int(g["stone_shape_id"]),
-                directions_id=int(g["directions_id"]),
-                stone_size=str(g["stone_size"]),
+                head_stone_setting_id=sid,
+                stone_shape_id=shid,
+                directions_id=did,
+                stone_size=str(g.get("stone_size", "")),
                 stone_count=norm_cnt(g),
             ))
 
         for g in shank_gems:
+            sid = _safe_int(g.get("shank_stone_setting_id"))
+            shid = _safe_int(g.get("stone_shape_id"))
+            did = _safe_int(g.get("directions_id"))
+            if not sid or not shid or not did:
+                continue
             db.add(models.ShankGems(
                 rings_id=rings_id,
-                shank_bands_stone_setting_id=int(g["shank_bands_stone_setting_id"]),
-                stone_shape_id=int(g["stone_shape_id"]),
-                directions_id=int(g["directions_id"]),
-                stone_size=str(g["stone_size"]),
+                shank_stone_setting_id=sid,
+                stone_shape_id=shid,
+                directions_id=did,
+                stone_size=str(g.get("stone_size", "")),
                 stone_count=norm_cnt(g),
             ))
 
-        for g in bands_gems:
-            db.add(models.BandsGems(
-                rings_id=rings_id,
-                shank_bands_stone_setting_id=int(g["shank_bands_stone_setting_id"]),
-                stone_shape_id=int(g["stone_shape_id"]),
-                directions_id=int(g["directions_id"]),
-                stone_size=str(g["stone_size"]),
-                stone_count=norm_cnt(g),
-            ))
 
         db.commit()
         return JSONResponse({"ok": True, "rings_id": rings_id, "code": new_base})
@@ -694,6 +722,7 @@ def rings_search(payload: dict = Body(...), db: Session = Depends(get_db)):
     shank_textures_ids = [int(x) for x in (payload.get("shank_textures_ids", []) or []) if x]
     bands_ids = [int(x) for x in (payload.get("bands_ids", []) or []) if x]
     bands_textures_ids = [int(x) for x in (payload.get("bands_textures_ids", []) or []) if x]
+    type_mode = payload.get("type_mode")  # 'rings' | 'bands' | None
 
     q = select(models.Rings).order_by(models.Rings.id.desc())
 
@@ -758,6 +787,15 @@ def rings_search(payload: dict = Body(...), db: Session = Depends(get_db)):
         if subq is not None:
             q = q.where(models.Rings.id.in_(subq))
 
+    if type_mode in ('rings', 'bands'):
+        bands_subq = select(models.rings_bands.c.rings_id).where(
+            models.rings_bands.c.rings_id == models.Rings.id
+        )
+        if type_mode == 'bands':
+            q = q.where(bands_subq.exists())
+        else:
+            q = q.where(~bands_subq.exists())
+
     rows = db.execute(q.limit(200)).scalars().all()
 
     out = []
@@ -769,6 +807,31 @@ def rings_search(payload: dict = Body(...), db: Session = Depends(get_db)):
             "path_3dm": r.path_3dm,
             "path_stl": r.path_stl,
             "pictures_folder": r.pictures_folder,
+            "ring_type_names": [rt.ring_name for rt in r.ring_types],
+            "head_setting_names": [hs.head_setting_name for hs in r.head_settings],
+            "shank_type_names": [st.shank_type_name for st in r.shank_types],
+            "profile_names": [p.profiles_name for p in r.profiles],
+            "head_texture_names": [t.textures_details_name for t in r.head_textures],
+            "shank_texture_names": [t.textures_details_name for t in r.shank_textures],
+            "head_gem": {
+                "settings": r.head_gems[0].head_stone_setting.name,
+                "shape": r.head_gems[0].stone_shape.stone_shape_name,
+                "direction": r.head_gems[0].directions.directions_name,
+                "size": r.head_gems[0].stone_size,
+                "count": r.head_gems[0].stone_count,
+            } if r.head_gems else None,
+            "shank_gems": [
+                {
+                    "settings": g.shank_stone_setting.name,
+                    "shape": g.stone_shape.stone_shape_name,
+                    "direction": g.directions.directions_name,
+                    "size": g.stone_size,
+                    "count": g.stone_count,
+                }
+                for g in r.shank_gems
+            ],
+            "finger_size": str(r.finger_size.finger_sizes_name) if r.finger_size else None,
+            "us_size": str(r.finger_size.finger_sizes_name) if r.finger_size else None,
         })
 
     return {"count": len(out), "items": out}

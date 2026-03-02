@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /d/python/Jewelry && source .venv/Scripts/activate && python - <<'EOF'\nfrom backend.app.db import SessionLocal\nfrom sqlalchemy import text\ndb = SessionLocal\\(\\)\nr1 = db.execute\\(text\\('SHOW CREATE TABLE shank_gems'\\)\\).fetchone\\(\\)\nprint\\(\"=== shank_gems ===\"\\)\nprint\\(r1[1]\\)\nprint\\(\\)\nr2 = db.execute\\(text\\('SHOW CREATE TABLE shank_stone_setting'\\)\\).fetchone\\(\\)\nprint\\(\"=== shank_stone_setting ===\"\\)\nprint\\(r2[1]\\)\ndb.close\\(\\)\nEOF)",
+      "Bash(tail:*)",
+      "Bash(cd /d/python/Jewelry/frontend && node -e \"require\\('jszip'\\); console.log\\('ok'\\)\" 2>&1)",
+      "mcp__ide__getDiagnostics"
+    ]
+  }
+}

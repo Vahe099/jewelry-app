@@ -10,10 +10,11 @@
   },
   "dependencies": {
     "@google/genai": "^1.39.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.563.0",
-    "react-router-dom": "^6.28.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-router-dom": "^6.28.0",
     "three": "^0.183.1"
   },
   "devDependencies": {
