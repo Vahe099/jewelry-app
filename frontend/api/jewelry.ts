@@ -1,6 +1,6 @@
 // API client for the Jewelry FastAPI backend.
-// Set VITE_API_BASE_URL in .env.local; falls back to direct localhost for dev.
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8000';
+// Base URL is auto-selected (LAN → ZeroTier) by api/client.ts.
+import { apiFetch, getBaseUrl } from './client';
 
 // ── Auth token helpers ────────────────────────────────────────────────────
 export function setAuthToken(token: string): void {
@@ -29,6 +29,7 @@ export interface Lookups {
   finger_sizes: LookupItem[];
   head_stone_settings: LookupItem[];
   shank_stone_settings: LookupItem[];
+  shank_bands_stone_settings: LookupItem[];
   stone_shapes: LookupItem[];
   directions: LookupItem[];
 }
@@ -49,6 +50,7 @@ export interface Ring {
   path_stl: string;
   pictures_folder: string;
   ring_type_names: string[];
+  band_names: string[];
   head_setting_names: string[];
   shank_type_names: string[];
   profile_names: string[];
@@ -66,6 +68,10 @@ export interface SearchFilters {
   headTextureItems: string[];
   shankTextureItems: string[];
   type_mode?: 'rings' | 'bands';
+  // Direct ID overrides (skip name→ID conversion)
+  ringTypeIds?: number[];
+  bandTypeIds?: number[];
+  profileIds?: number[];
 }
 
 // Case-insensitive name → ID matching.
@@ -81,7 +87,7 @@ export function matchIds(names: string[], items: LookupItem[]): number[] {
 }
 
 export async function fetchLookups(): Promise<Lookups> {
-  const res = await fetch(`${API_BASE}/api/lookups`);
+  const res = await apiFetch('/api/lookups');
   if (!res.ok) throw new Error(`Failed to fetch lookups: ${res.status}`);
   return res.json();
 }
@@ -91,18 +97,18 @@ export async function searchRings(
   lookups: Lookups,
 ): Promise<{ count: number; items: Ring[] }> {
   const payload = {
-    ring_type_ids:      matchIds(filters.selectedDetailItems, lookups.ring_types),
+    ring_type_ids:      filters.ringTypeIds ?? matchIds(filters.selectedDetailItems, lookups.ring_types),
     head_setting_ids:   matchIds(filters.selectedHeadItems,   lookups.head_settings),
     shank_type_ids:     matchIds(filters.selectedShankItems,  lookups.shank_types),
-    profiles_ids:       matchIds(filters.selectedProfileItems, lookups.profiles),
+    profiles_ids:       filters.profileIds  ?? matchIds(filters.selectedProfileItems, lookups.profiles),
     head_textures_ids:  matchIds(filters.headTextureItems,    lookups.textures),
     shank_textures_ids: matchIds(filters.shankTextureItems,   lookups.textures),
-    bands_ids:          matchIds(filters.selectedShankItems,  lookups.bands),
+    bands_ids:          filters.bandTypeIds ?? matchIds(filters.selectedShankItems, lookups.bands),
     bands_textures_ids: [],
     type_mode:          filters.type_mode,
   };
 
-  const res = await fetch(`${API_BASE}/api/rings/search`, {
+  const res = await apiFetch('/api/rings/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -115,7 +121,7 @@ export async function createRing(
   formData: FormData,
 ): Promise<{ ok: boolean; rings_id: number; code: number }> {
   const token = getAuthToken();
-  const res = await fetch(`${API_BASE}/create-ring`, {
+  const res = await apiFetch('/create-ring', {
     method: 'POST',
     body: formData,
     // No Content-Type header — browser sets it with the correct multipart boundary.
@@ -129,19 +135,22 @@ export async function createRing(
 }
 
 export async function fetchRingImages(ringId: number): Promise<string[]> {
-  const res = await fetch(`${API_BASE}/api/rings/${ringId}/images`);
+  const res = await apiFetch(`/api/rings/${ringId}/images`);
   if (!res.ok) return [];
+  const base = await getBaseUrl();
   const data: { images: string[] } = await res.json();
-  return data.images.map(path => `${API_BASE}${path}`);
+  return data.images.map(path => `${base}${path}`);
 }
 
-export async function fetchRingFiles(ringId: number): Promise<{ images: string[]; stl: string | null }> {
-  const res = await fetch(`${API_BASE}/api/rings/${ringId}/files`);
-  if (!res.ok) return { images: [], stl: null };
-  const data: { images: string[]; stl: string | null } = await res.json();
+export async function fetchRingFiles(ringId: number): Promise<{ images: string[]; stl: string | null; glb: string | null }> {
+  const res = await apiFetch(`/api/rings/${ringId}/files`);
+  if (!res.ok) return { images: [], stl: null, glb: null };
+  const base = await getBaseUrl();
+  const data: { images: string[]; stl: string | null; glb: string | null } = await res.json();
   return {
-    images: data.images.map(p => `${API_BASE}${p}`),
-    stl: data.stl ? `${API_BASE}${data.stl}` : null,
+    images: data.images.map(p => `${base}${p}`),
+    stl: data.stl ? `${base}${data.stl}` : null,
+    glb: data.glb ? `${base}${data.glb}` : null,
   };
 }
 
@@ -152,7 +161,7 @@ export interface AuthResponse {
 }
 
 export async function register(email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE}/api/auth/register`, {
+  const res = await apiFetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -167,7 +176,7 @@ export async function register(email: string, password: string): Promise<AuthRes
 }
 
 export async function login(email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
+  const res = await apiFetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -183,7 +192,7 @@ export async function login(email: string, password: string): Promise<AuthRespon
 
 export async function me(): Promise<{ email: string; is_active: boolean }> {
   const token = getAuthToken();
-  const res = await fetch(`${API_BASE}/api/auth/me`, {
+  const res = await apiFetch('/api/auth/me', {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) throw new Error(`me() failed: ${res.status}`);

@@ -282,6 +282,11 @@ class Rings(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    bands_gems: Mapped[List["BandsGems"]] = relationship(
+        back_populates="ring",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 # -------------------------
@@ -348,5 +353,37 @@ class ShankGems(Base):
     stone_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
     shank_stone_setting: Mapped[ShankStoneSetting] = relationship(lazy="selectin")
+    stone_shape: Mapped[StoneShape] = relationship(lazy="selectin")
+    directions: Mapped[Directions] = relationship(lazy="selectin")
+
+
+class BandsGems(Base):
+    __tablename__ = "bands_gems"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    rings_id: Mapped[int] = mapped_column(
+        ForeignKey("rings.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False
+    )
+    ring: Mapped["Rings"] = relationship(back_populates="bands_gems", lazy="selectin")
+
+    shank_bands_stone_setting_id: Mapped[int] = mapped_column(
+        ForeignKey("shank_bands_stone_setting.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False
+    )
+    stone_shape_id: Mapped[int] = mapped_column(
+        ForeignKey("stone_shape.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False
+    )
+    directions_id: Mapped[int] = mapped_column(
+        ForeignKey("directions.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False
+    )
+
+    stone_size: Mapped[str] = mapped_column(String(32), nullable=False)
+    stone_count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    shank_bands_stone_setting: Mapped[ShankBandsStoneSetting] = relationship(lazy="selectin")
     stone_shape: Mapped[StoneShape] = relationship(lazy="selectin")
     directions: Mapped[Directions] = relationship(lazy="selectin")

@@ -31,8 +31,9 @@ BASE_SAVE = Path(r"D:\python\Jewelry_file")
 SAVE_3DM = BASE_SAVE / "3dm"
 SAVE_STL = BASE_SAVE / "stl"
 SAVE_PICS = BASE_SAVE / "picturs"
+SAVE_GLB = BASE_SAVE / "glb"
 
-for p in [SAVE_3DM, SAVE_STL, SAVE_PICS]:
+for p in [SAVE_3DM, SAVE_STL, SAVE_PICS, SAVE_GLB]:
     p.mkdir(parents=True, exist_ok=True)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -58,7 +59,56 @@ app.mount("/static", StaticFiles(directory=str(PROJECT_DIR / "static")), name="s
 app.mount("/media", StaticFiles(directory=str(SAVE_PICS)), name="media")
 app.mount("/stl", StaticFiles(directory=str(SAVE_STL)), name="stl")
 app.mount("/3dm", StaticFiles(directory=str(SAVE_3DM)), name="3dm")
+app.mount("/glb", StaticFiles(directory=str(SAVE_GLB)), name="glb")
 templates = Jinja2Templates(directory=str(PROJECT_DIR / "templates"))
+
+
+# -------------------------
+# STL → GLB conversion (pure stdlib, no external deps)
+# -------------------------
+def stl_to_glb(stl_path: Path) -> bytes:
+    """Convert a binary STL to a minimal GLB (GLTF 2.0 binary) blob."""
+    import struct as _s
+    data = stl_path.read_bytes()
+    # Detect ASCII STL — binary STL never starts with "solid " followed by actual ASCII
+    if data[:6] == b"solid " and not data[80:84].isdigit():
+        raise ValueError("ASCII STL not supported")
+    num_tri = _s.unpack_from("<I", data, 80)[0]
+    floats: list[float] = []
+    for i in range(num_tri):
+        base = 84 + i * 50          # skip 12-byte normal
+        for v in range(3):
+            floats.extend(_s.unpack_from("<3f", data, base + 12 + v * 12))
+
+    n_verts = len(floats) // 3
+    bin_data = _s.pack(f"<{len(floats)}f", *floats)
+    bin_pad = (4 - len(bin_data) % 4) % 4
+    bin_padded = bin_data + b"\x00" * bin_pad
+
+    xs = floats[0::3]; ys = floats[1::3]; zs = floats[2::3]
+    gltf_json = json.dumps({
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "mode": 4}]}],
+        "accessors": [{
+            "bufferView": 0, "componentType": 5126, "count": n_verts,
+            "type": "VEC3",
+            "min": [min(xs), min(ys), min(zs)],
+            "max": [max(xs), max(ys), max(zs)],
+        }],
+        "bufferViews": [{"buffer": 0, "byteLength": len(bin_data), "target": 34962}],
+        "buffers": [{"byteLength": len(bin_data)}],
+    }, separators=(",", ":")).encode()
+    json_pad = (4 - len(gltf_json) % 4) % 4
+    json_padded = gltf_json + b" " * json_pad
+
+    total = 12 + 8 + len(json_padded) + 8 + len(bin_padded)
+    glb = _s.pack("<III", 0x46546C67, 2, total)
+    glb += _s.pack("<II", len(json_padded), 0x4E4F534A) + json_padded
+    glb += _s.pack("<II", len(bin_padded), 0x004E4942) + bin_padded
+    return glb
 
 # -------------------------
 # DB dependency
@@ -134,6 +184,7 @@ def get_lookups(db: Session = Depends(get_db)):
         "us_sizes":      rows(models.FingerSizes,     "finger_sizes_name"),
         "head_stone_settings":        rows(models.HeadStoneSetting,      "name"),
         "shank_stone_settings": rows(models.ShankStoneSetting, "name"),
+        "shank_bands_stone_settings": rows(models.ShankBandsStoneSetting, "name"),
         "stone_shapes":               rows(models.StoneShape,             "stone_shape_name"),
         "directions":                 rows(models.Directions,             "directions_name"),
     }
@@ -156,7 +207,10 @@ def get_ring_files(ring_id: int, db: Session = Depends(get_db)):
         images = []
     stl_path = Path(ring.path_stl) if ring.path_stl else None
     stl = f"/stl/{stl_path.name}" if stl_path and stl_path.exists() else None
-    return {"images": images, "stl": stl}
+    code = 10000000 + ring_id
+    glb_path = SAVE_GLB / f"{code}.glb"
+    glb = f"/glb/{glb_path.name}" if glb_path.exists() else None
+    return {"images": images, "stl": stl, "glb": glb}
 
 @app.get("/api/rings/{ring_id}/images")
 def get_ring_images(ring_id: int, db: Session = Depends(get_db)):
@@ -494,12 +548,14 @@ def create_ring_submit(
 
     head_gems_json: str = Form(default="[]"),
     shank_gems_json: str = Form(default="[]"),
+    band_gems_json: str = Form(default="[]"),
 
     db: Session = Depends(get_db),
     _: models.User = Depends(get_current_user),
 ):
     head_gems: List[Dict[str, Any]] = json.loads(head_gems_json or "[]")
     shank_gems: List[Dict[str, Any]] = json.loads(shank_gems_json or "[]")
+    band_gems: List[Dict[str, Any]] = json.loads(band_gems_json or "[]")
 
     def _safe_int(val) -> Optional[int]:
         try:
@@ -597,6 +653,13 @@ def create_ring_submit(
         ring.path_stl = str(final_stl)
         ring.pictures_folder = str(final_pics_folder)
 
+        # Convert STL → GLB (best-effort; failures are non-fatal)
+        try:
+            glb_bytes = stl_to_glb(final_stl)
+            (SAVE_GLB / f"{new_base}.glb").write_bytes(glb_bytes)
+        except Exception:
+            pass
+
         if ring_type_ids:
             ring.ring_types = db.execute(
                 select(models.RingType).where(models.RingType.id.in_(ring_type_ids))
@@ -675,6 +738,20 @@ def create_ring_submit(
                 stone_count=norm_cnt(g),
             ))
 
+        for g in band_gems:
+            sid = _safe_int(g.get("shank_bands_stone_setting_id"))
+            shid = _safe_int(g.get("stone_shape_id"))
+            did = _safe_int(g.get("directions_id"))
+            if not sid or not shid or not did:
+                continue
+            db.add(models.BandsGems(
+                rings_id=rings_id,
+                shank_bands_stone_setting_id=sid,
+                stone_shape_id=shid,
+                directions_id=did,
+                stone_size=str(g.get("stone_size", "")),
+                stone_count=norm_cnt(g),
+            ))
 
         db.commit()
         return JSONResponse({"ok": True, "rings_id": rings_id, "code": new_base})
@@ -808,6 +885,7 @@ def rings_search(payload: dict = Body(...), db: Session = Depends(get_db)):
             "path_stl": r.path_stl,
             "pictures_folder": r.pictures_folder,
             "ring_type_names": [rt.ring_name for rt in r.ring_types],
+            "band_names": [b.band_name for b in r.bands],
             "head_setting_names": [hs.head_setting_name for hs in r.head_settings],
             "shank_type_names": [st.shank_type_name for st in r.shank_types],
             "profile_names": [p.profiles_name for p in r.profiles],
