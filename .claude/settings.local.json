@@ -7,7 +7,12 @@
       "mcp__ide__getDiagnostics",
       "Bash(npx tsc:*)",
       "Bash(pip show:*)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "Bash(cd \"D:/python/Jewelry/frontend_new\" && timeout 8 npm run dev 2>&1 || true)",
+      "Bash(curl -s http://127.0.0.1:8000/api/lookups 2>&1 | python -m json.tool 2>/dev/null | head -200)",
+      "Bash(curl -s http://127.0.0.1:8000/api/lookups 2>&1 | python -m json.tool 2>/dev/null | tail -300)",
+      "Bash(curl -s http://127.0.0.1:8000/api/lookups | python -c \"\nimport json, sys\ndata = json.load\\(sys.stdin\\)\nprint\\('=== shank_types ==='\\)\nfor item in data['shank_types']:\n    print\\('  ' + repr\\(item['name']\\)\\)\nprint\\(\\)\nprint\\('=== head_settings ==='\\)\nfor item in data['head_settings']:\n    print\\('  ' + repr\\(item['name']\\)\\)\n\")",
+      "Bash(cd D:/python/Jewelry/frontend_new && npm install react-router-dom --save 2>&1 | tail -5)"
     ]
   }
 }

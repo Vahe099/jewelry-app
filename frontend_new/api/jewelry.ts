@@ -45,7 +45,7 @@ export interface RingGem {
 export interface Ring {
   id: number;
   code: number;
-  finger_size: string;
+  finger_size: string | null;
   path_3dm: string;
   path_stl: string;
   pictures_folder: string;
@@ -74,13 +74,24 @@ export interface SearchFilters {
   profileIds?: number[];
 }
 
-// Case-insensitive name → ID matching.
+// Normalize a lookup string: lowercase, underscores→spaces, strip accents, trim.
+// This handles DB names like "Three_Prongs", "Pave_Setting", "Nort-Sout" etc.
+function norm(s: string): string {
+  return String(s)
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+// Case-insensitive name → ID matching with normalization.
 // Allows partial matches: if the frontend label starts with a DB name or vice versa.
 export function matchIds(names: string[], items: LookupItem[]): number[] {
-  const normalized = names.map(n => n.toLowerCase());
+  const normalized = names.map(norm);
   return items
     .filter(item => {
-      const itemName = item.name.toLowerCase();
+      const itemName = norm(item.name);
       return normalized.some(n => n === itemName || n.startsWith(itemName) || itemName.startsWith(n));
     })
     .map(item => item.id);

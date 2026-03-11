@@ -4,7 +4,6 @@ import { fetchLookups, searchRings, createRing, matchIds, fetchRingFiles, login,
 import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2, LogOut, Download } from 'lucide-react';
 import JSZip from 'jszip';
 import StlViewer from './components/StlViewer';
-import GlbViewer from './components/GlbViewer';
 
 // Define constants for ring sizes and menu labels
 const INTEGER_SIZE_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"];
@@ -238,8 +237,7 @@ const AppContent: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(DEFAULT_PRODUCT_IMAGE);
   const [ringImages, setRingImages] = useState<string[]>([]);
   const [ringStl, setRingStl] = useState<string | null>(null);
-  const [ringGlb, setRingGlb] = useState<string | null>(null);
-  const [activePreviewTab, setActivePreviewTab] = useState<'IMAGE' | 'STL' | '3DM'>('IMAGE');
+  const [activePreviewTab, setActivePreviewTab] = useState<'IMAGE' | 'STL'>('IMAGE');
   const [libraryImages, setLibraryImages] = useState<Record<number, string>>({});
 
   const [isLoadingRings, setIsLoadingRings] = useState<boolean>(true);
@@ -337,7 +335,6 @@ const AppContent: React.FC = () => {
           setSelectedImage(null);
           setRingImages([]);
           setRingStl(null);
-          setRingGlb(null);
           setShowSummaryOverlay(false);
         }
       }).catch(e => { if (reqId === fetchIdRef.current) { console.error(e); setIsLoadingRings(false); } });
@@ -352,7 +349,6 @@ const AppContent: React.FC = () => {
     setSelectedImage(null);
     setRingImages([]);
     setRingStl(null);
-    setRingGlb(null);
     setShowSummaryOverlay(false);
   }, [activeJewelryType]);
 
@@ -629,7 +625,6 @@ const AppContent: React.FC = () => {
     setSelectedImage(DEFAULT_PRODUCT_IMAGE);
     setRingImages([]);
     setRingStl(null);
-    setRingGlb(null);
     setActivePreviewTab('IMAGE');
     setGemBuilderType('main');
     setEditingItemCode(null);
@@ -904,17 +899,15 @@ const AppContent: React.FC = () => {
     setSelectedListItem(num);
     const ring = rings[num - 1];
     if (ring) {
-      fetchRingFiles(ring.id).then(({ images, stl, glb }) => {
+      fetchRingFiles(ring.id).then(({ images, stl }) => {
         setRingImages(images);
         setRingStl(stl);
-        setRingGlb(glb);
         setActivePreviewTab('IMAGE');
         setSelectedImage(images[0] ?? libraryImages[num] ?? null);
       });
     } else {
       setRingImages([]);
       setRingStl(null);
-      setRingGlb(null);
       setActivePreviewTab('IMAGE');
       setSelectedImage(libraryImages[num] ?? null);
     }
@@ -1383,7 +1376,7 @@ const AppContent: React.FC = () => {
                  <div
                    id="main-photo-viewport"
                    onClick={() => activePreviewTab === 'IMAGE' && selectedImage && setIsFullScreenImage(true)}
-                   className={`flex-1 w-full min-h-0 flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative ${activePreviewTab === 'STL' || activePreviewTab === '3DM' ? 'cursor-default' : 'cursor-pointer'} group transition-none overflow-hidden`}
+                   className={`flex-1 w-full min-h-0 flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative ${activePreviewTab === 'STL' ? 'cursor-default' : 'cursor-pointer'} group transition-none overflow-hidden`}
                  >
                     {isLoadingRings ? (
                       <span className={`text-sm font-bold uppercase tracking-widest ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>Loading...</span>
@@ -1391,12 +1384,6 @@ const AppContent: React.FC = () => {
                       <div className="absolute inset-0">
                         <StlViewer url={ringStl} isDarkMode={isDarkMode} />
                       </div>
-                    ) : activePreviewTab === '3DM' && ringGlb ? (
-                      <div className="absolute inset-0">
-                        <GlbViewer url={ringGlb} isDarkMode={isDarkMode} />
-                      </div>
-                    ) : activePreviewTab === '3DM' ? (
-                      <span className={`text-sm font-bold uppercase tracking-widest ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>3DM preview unavailable</span>
                     ) : selectedImage ? (
                       <>
                         <div
@@ -1419,7 +1406,7 @@ const AppContent: React.FC = () => {
                       </>
                     ) : null}
                  </div>
-                 {!isLoadingRings && (ringImages.length > 0 || ringStl || ringGlb) && (
+                 {!isLoadingRings && (ringImages.length > 0 || ringStl) && (
                    <div className={`flex items-center justify-start gap-2 overflow-x-auto overflow-y-hidden hide-scrollbar shrink-0 p-2 w-full h-32 relative z-10 ${isDarkMode ? 'bg-[#0b0f19]' : 'bg-[#e2e8f0]'}`}>
                      {ringImages.map((url, i) => (
                        <img
@@ -1436,14 +1423,6 @@ const AppContent: React.FC = () => {
                          className={`h-24 w-24 shrink-0 border-2 flex items-center justify-center text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer ${activePreviewTab === 'STL' ? 'border-[#38bdf8] text-[#38bdf8]' : isDarkMode ? 'border-transparent text-gray-400 hover:border-gray-600 hover:text-white' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-black'}`}
                        >
                          3D
-                       </button>
-                     )}
-                     {ringGlb && (
-                       <button
-                         onClick={(e) => { e.stopPropagation(); setActivePreviewTab('3DM'); }}
-                         className={`h-24 w-24 shrink-0 border-2 flex items-center justify-center text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer ${activePreviewTab === '3DM' ? 'border-[#38bdf8] text-[#38bdf8]' : isDarkMode ? 'border-transparent text-gray-400 hover:border-gray-600 hover:text-white' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-black'}`}
-                       >
-                         3DM
                        </button>
                      )}
                    </div>
