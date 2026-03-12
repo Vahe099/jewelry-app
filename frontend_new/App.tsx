@@ -1,32 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2, Check, Download, Plus, Trash2 } from 'lucide-react';
-import { fetchLookups, searchRings, createRing, fetchRingFiles, matchIds, login, getAuthToken, type Lookups, type Ring } from './api/jewelry';
+import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2, Check, Download, Plus, Trash2, LogOut } from 'lucide-react';
+import { fetchLookups, searchRings, createRing, fetchRingFiles, matchIds, login, me, getAuthToken, clearAuthToken, type Lookups, type Ring } from './api/jewelry';
+import { getBaseUrl } from './api/client';
+import JSZip from 'jszip';
+import StlViewer from './components/StlViewer';
 
 // Define constants for ring sizes and menu labels
-const VALID_SIZES = [
-  "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5", "2.75", "3", "3.25", "3.5", "3.75",
-  "4", "4.25", "4.5", "4.75", "5", "5.25", "5.5", "5.75", "6", "6.25", "6.5", "6.75",
-  "7", "7.25", "7.5", "7.75", "8", "8.25", "8.5", "8.75", "9", "9.25", "9.5", "9.75",
-  "10", "10.25", "10.5", "10.75", "11", "11.25", "11.5", "11.75", "12", "12.25", "12.5", "12.75",
-  "13", "13.25", "13.5", "13.75", "14", "14.25", "14.5", "14.75", "15", "15.25", "15.5", "15.75", "16",
-  "16.25", "16.5", "16.75", "17", "17.25", "17.5", "17.75", "18", "18.25", "18.5", "18.75", "19", "19.25", "19.5", "19.75", "20"
-];
-
 const INTEGER_SIZE_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"];
-
-const isValidSize = (val: string): boolean => {
-  if (!val) return false;
-  const num = parseFloat(val);
-  if (isNaN(num) || num < 1 || num > 20) return false;
-  if (val.includes('.')) {
-    const parts = val.split('.');
-    if (parts[1] === undefined || parts[1].length === 0) return false;
-    if (VALID_SIZES.includes(val)) return true;
-    return parts[1].length >= 2;
-  }
-  return true;
-};
 const CUSTOMER_NAMES = [
   "Adam Warlock", "Alejandra Jones", "Alex Summers", "Alexander Wright", "Alicia Masters",
   "Amara Okafor", "America Chavez", "Anna Marie", "Aria Gupta", "Arthur Curry",
@@ -184,6 +165,7 @@ const App: React.FC = () => {
   const fileInput3DMRef = useRef<HTMLInputElement>(null);
   const fileInputSTLRef = useRef<HTMLInputElement>(null);
   const fileInputMediaRef = useRef<HTMLInputElement>(null);
+  const typePickerInputRef = useRef<HTMLInputElement>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -193,6 +175,12 @@ const App: React.FC = () => {
   const [menuHistory, setMenuHistory] = useState<number[]>([0]);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [headGemPickerField, setHeadGemPickerField] = useState<
+    'ring_type' | 'band_type' | 'head_setting' | 'head_texture' |
+    'shank_type' | 'profile' | 'shank_texture' |
+    'settings' | 'shapes' | 'directions' | null>(null);
+  const gemPickerSetterRef = useRef<((v: string[]) => void) | null>(null);
+  const [typePickerQuery, setTypePickerQuery] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isSerchExpanded, setIsSerchExpanded] = useState(false);
   const [hasSearchBeenClicked, setHasSearchBeenClicked] = useState(false);
@@ -235,7 +223,7 @@ const App: React.FC = () => {
   const [shankSecSize, setShankSecSize] = useState<string>("");
   const [shankSecCount, setShankSecCount] = useState<string>("");
 
-  const [shankGems, setShankGems] = useState<ShankGemRow[]>([]);
+  const [shankGems, setShankGems] = useState<ShankGemRow[]>([mkShankGem()]);
   const [shankPickerRow, setShankPickerRow] = useState(0);
   const [shankPickerField, setShankPickerField] = useState<'settings' | 'shapes' | 'directions' | null>(null);
   const updateShankGem = (idx: number, patch: Partial<ShankGemRow>) =>
@@ -262,13 +250,14 @@ const App: React.FC = () => {
 
   // ── Backend integration state ─────────────────────────────────────────────
   const [lookups, setLookups] = useState<Lookups | null>(null);
+  const validSizes = useMemo(() => (lookups?.finger_sizes || []).map(x => String(x.name)), [lookups]);
   const [rings, setRings] = useState<Ring[]>([]);
   const [file3dm, setFile3dm] = useState<File | null>(null);
   const [fileStl, setFileStl] = useState<File | null>(null);
   const [fileMedia, setFileMedia] = useState<File[]>([]);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -291,8 +280,12 @@ const App: React.FC = () => {
   const [customerDragOffset, setCustomerDragOffset] = useState(0);
 
   const [selectedListItem, setSelectedListItem] = useState<number | null>(null);
+  const [infoRing, setInfoRing] = useState<Ring | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(DEFAULT_PRODUCT_IMAGE);
   const [libraryImages, setLibraryImages] = useState<Record<number, string>>({});
+  const [ringImages, setRingImages] = useState<string[]>([]);
+  const [ringStl, setRingStl] = useState<string | null>(null);
+  const [activePreviewTab, setActivePreviewTab] = useState<'IMAGE' | 'STL'>('IMAGE');
 
   const [showSummaryOverlay, setShowSummaryOverlay] = useState<boolean>(false);
   const [overlayPage, setOverlayPage] = useState<number>(0);
@@ -681,32 +674,53 @@ const App: React.FC = () => {
   };
 
   const resetAll = useCallback(() => {
-    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsSerchExpanded(false); setHasSearchBeenClicked(false); setHasCustomerSearchBeenClicked(false); setSearchQuery(""); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setShankGems([]); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(null); setEditingItemCode(null); setIsSkipChecked(false); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(DEFAULT_PRODUCT_IMAGE); setUploadedAssets({}); setFile3dm(null); setFileStl(null); setFileMedia([]); setUploadStatus('idle'); setUploadError(null);
+    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsSerchExpanded(false); setHasSearchBeenClicked(false); setHasCustomerSearchBeenClicked(false); setSearchQuery(""); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setShankGems([mkShankGem()]); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(null); setEditingItemCode(null); setIsSkipChecked(false); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(DEFAULT_PRODUCT_IMAGE); setRingImages([]); setRingStl(null); setActivePreviewTab('IMAGE'); setUploadedAssets({}); setFile3dm(null); setFileStl(null); setFileMedia([]); setUploadStatus('idle'); setUploadError(null);
   }, []);
 
   // ── Backend upload handler (must be after resetAll) ───────────────────────
   const handleAccept = useCallback(async () => {
-    if (!lookups || !file3dm || !fileStl || fileMedia.length === 0) return;
-    if (!getAuthToken()) { setIsLoginModalOpen(true); return; }
+    if (!lookups) return;
+
     const sizeStr = selectedSizeItems[0] || '';
     // finger_size: DB name field is numeric (e.g. 7.0), sizeStr is a string ("7")
     const fingerSizeItem = lookups.finger_sizes.find(
       fs => parseFloat(String(fs.name)) === parseFloat(sizeStr),
-    );
-    if (!fingerSizeItem) { setUploadError('Please select a valid US size.'); return; }
+    ) ?? lookups.finger_sizes[0];
 
-    const ringTypeNames = activeJewelryType === 'ring'
-      ? (selectedOptions[2] || [])
-      : (selectedOptions[3] || []);
+    // Ring type: selected via TYPE popup → stored in selectedDetailItems, not selectedOptions[2/3]
+    const ringTypeNames = selectedDetailItems.filter(item =>
+      activeJewelryType === 'ring' ? menuData[2].includes(item) : menuData[3].includes(item)
+    );
     const headItems = [...(selectedOptions[7] || []), ...(selectedOptions[8] || [])];
 
-    const headGems = mainGemsSettings.length > 0 ? [{
-      head_stone_setting_id: matchIds(mainGemsSettings, lookups.head_stone_settings)[0] ?? null,
-      stone_shape_id:        matchIds(mainGemsShapes, lookups.stone_shapes)[0] ?? null,
-      directions_id:         matchIds(mainGemsDirections, lookups.directions)[0] ?? null,
-      stone_size:  mainGemsSize,
-      stone_count: parseInt(mainGemsCount) || 1,
-    }] : [];
+    // Head main gem: after handleAcceptMainGems, data is encoded as "M_..." in selectedHeadItems
+    // and mainGemsSettings is cleared. Decode from the M_ code first; fall back to raw state.
+    const settingMapRev: Record<string, string> = { "BZ": "Bezel", "HB": "Half bezel", "3P": "Three Prongs", "FP": "Four Prongs", "5P": "Five Prongs", "6P": "Six Prongs", "DP": "Double Prong", "BN": "Burnish", "PG": "Peg" };
+    const shapeMapRev: Record<string, string> = { "RD": "Round", "AS": "Asscher", "CU": "Cushion", "EM": "Emerald", "MQ": "Marquise", "OV": "Oval", "PE": "Pear", "PR": "Princess", "RA": "Radiant", "SR": "Radiant Square", "SC": "Cushion Square", "HT": "Heart", "BG": "Baguette", "TB": "Tapered Baguette", "HX": "Hexagon", "KT": "Kite", "TR": "Trillion", "HM": "Half Moon" };
+    const directionMapRev: Record<string, string> = { "NS": "North-South", "SL": "Slanted", "AL": "Alternating", "EW": "Est-West", "ND": "Not-Directed" };
+    let headGems: Array<{ head_stone_setting_id: number | null; stone_shape_id: number | null; directions_id: number | null; stone_size: string; stone_count: number }> = [];
+    const mainGemCode = selectedHeadItems.find(item => item.startsWith("M_"));
+    if (mainGemCode) {
+      const parts = mainGemCode.substring(2).split('_');
+      const settingName = settingMapRev[parts[0]] || menuData[11].find(o => o.substring(0, 2).toUpperCase() === parts[0]);
+      const shapeName   = shapeMapRev[parts[1]]   || menuData[12].find(o => o.substring(0, 2).toUpperCase() === parts[1]);
+      const dirName     = directionMapRev[parts[2]] || menuData[13].find(o => o.substring(0, 1).toUpperCase() === parts[2]);
+      headGems = [{
+        head_stone_setting_id: settingName ? matchIds([settingName], lookups.head_stone_settings)[0] ?? null : null,
+        stone_shape_id:        shapeName   ? matchIds([shapeName],   lookups.stone_shapes)[0]          ?? null : null,
+        directions_id:         dirName     ? matchIds([dirName],     lookups.directions)[0]             ?? null : null,
+        stone_size:  parts[3] || '',
+        stone_count: parseInt(parts[4]) || 1,
+      }];
+    } else if (mainGemsSettings.length > 0) {
+      headGems = [{
+        head_stone_setting_id: matchIds(mainGemsSettings, lookups.head_stone_settings)[0] ?? null,
+        stone_shape_id:        matchIds(mainGemsShapes,   lookups.stone_shapes)[0]          ?? null,
+        directions_id:         matchIds(mainGemsDirections, lookups.directions)[0]           ?? null,
+        stone_size:  mainGemsSize,
+        stone_count: parseInt(mainGemsCount) || 1,
+      }];
+    }
 
     const shankGemsPayload = shankGems.map(r => ({
       shank_stone_setting_id: r.settingId,
@@ -717,10 +731,10 @@ const App: React.FC = () => {
     }));
 
     const fd = new FormData();
-    fd.append('file_3dm', file3dm);
-    fd.append('file_stl', fileStl);
+    if (file3dm) fd.append('file_3dm', file3dm);
+    if (fileStl) fd.append('file_stl', fileStl);
     fileMedia.forEach(f => fd.append('pictures', f));
-    fd.append('finger_size_id', String(fingerSizeItem.id));
+    if (fingerSizeItem) fd.append('finger_size_id', String(fingerSizeItem.id));
     matchIds(ringTypeNames, lookups.ring_types).forEach(id => fd.append('ring_type_ids', String(id)));
     matchIds(headItems, lookups.head_settings).forEach(id => fd.append('head_setting_ids', String(id)));
     matchIds(applyLabelMap(selectedOptions[14] || [], SHANK_TYPE_LABEL_MAP), lookups.shank_types).forEach(id => fd.append('shank_type_ids', String(id)));
@@ -741,12 +755,13 @@ const App: React.FC = () => {
       setUploadStatus('success');
       setIsSaveModalOpen(false);
       resetAll();
+      navigate('/jewelry-type');
     } catch (err: unknown) {
       setUploadStatus('error');
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     }
   }, [lookups, file3dm, fileStl, fileMedia, selectedSizeItems, activeJewelryType, selectedOptions,
-      mainGemsSettings, mainGemsShapes, mainGemsDirections, mainGemsSize, mainGemsCount,
+      selectedDetailItems, mainGemsSettings, mainGemsShapes, mainGemsDirections, mainGemsSize, mainGemsCount,
       shankGems,
       selectedProfileItems, selectedHeadItems, selectedShankItems, resetAll]);
   // ─────────────────────────────────────────────────────────────────────────
@@ -834,6 +849,12 @@ const App: React.FC = () => {
       syncCustomerScrollbar(true);
     }
   }, [isDraggingCustomerThumb, syncCustomerScrollbar]);
+
+  // Restore user session on mount
+  useEffect(() => {
+    if (!getAuthToken()) return;
+    me().then(data => setUserEmail(data.email)).catch(() => clearAuthToken());
+  }, []);
 
   // Sync customer scrollbar when content or dropdown state changes
   useEffect(() => {
@@ -940,7 +961,28 @@ const App: React.FC = () => {
     setThumbTop(constrainedY);
   }, [thumbHeight, topPadding, bottomPadding]);
 
-  const handlePhotoAreaClick = () => { fileInputRef.current?.click(); };
+  const downloadRingFilesZip = async (ring: Ring) => {
+    const base = await getBaseUrl();
+    const code = String(ring.code);
+    const url3dm = `${base}/3dm/${code}.3dm`;
+    const urlStl = `${base}/stl/${code}.stl`;
+    try {
+      const [res3dm, resStl] = await Promise.all([fetch(url3dm), fetch(urlStl)]);
+      if (!res3dm.ok && !resStl.ok) { setUploadError(`Files not found for ring ${code}.`); return; }
+      const zip = new JSZip();
+      const folder = zip.folder(code)!;
+      if (res3dm.ok) folder.file(`${code}.3dm`, await res3dm.blob());
+      if (resStl.ok) folder.file(`${code}.stl`, await resStl.blob());
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${code}_files.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err) {
+      setUploadError(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -960,16 +1002,17 @@ const App: React.FC = () => {
 
   const handleListItemClick = useCallback((num: number) => {
     setSelectedListItem(num);
-    const existing = libraryImages[num];
-    if (existing) { setSelectedImage(existing); return; }
     fetchRingFiles(num)
-      .then(files => {
-        const img = files.images[0] || null;
-        if (img) { setLibraryImages(prev => ({ ...prev, [num]: img })); setSelectedImage(img); }
-        else setSelectedImage(DEFAULT_PRODUCT_IMAGE);
+      .then(({ images, stl }) => {
+        setRingImages(images);
+        setRingStl(stl);
+        setActivePreviewTab('IMAGE');
+        const img = images[0] || null;
+        if (img) { setLibraryImages(prev => ({ ...prev, [num]: img })); }
+        setSelectedImage(img ?? DEFAULT_PRODUCT_IMAGE);
       })
-      .catch(() => setSelectedImage(DEFAULT_PRODUCT_IMAGE));
-  }, [libraryImages]);
+      .catch(() => { setRingImages([]); setRingStl(null); setSelectedImage(DEFAULT_PRODUCT_IMAGE); });
+  }, []);
 
   const handlePrevListItem = useCallback(() => {
     if (filteredListItems.length === 0) return;
@@ -1232,20 +1275,47 @@ const App: React.FC = () => {
   // ── Fetch ring list whenever lookups or active filters change ─────────────
   useEffect(() => {
     if (!lookups) return;
+    const activeDetailItems  = selectedDetailItems.filter(i  => !activeMagnifiers[i]);
+    const activeHeadItems    = selectedHeadItems.filter(i    => !activeMagnifiers[i]);
+    const activeShankItems   = selectedShankItems.filter(i   => !activeMagnifiers[i]);
+    const activeProfileItems = selectedProfileItems.filter(i => !activeMagnifiers[i]);
     searchRings({
-      selectedDetailItems,
-      selectedHeadItems,
-      selectedShankItems,
-      selectedProfileItems,
-      headTextureItems:  selectedHeadItems.filter(i => menuData[19].includes(i)),
-      shankTextureItems: selectedShankItems.filter(i => menuData[19].includes(i)),
+      selectedDetailItems:  activeDetailItems,
+      selectedHeadItems:    activeHeadItems,
+      selectedShankItems:   activeShankItems,
+      selectedProfileItems: activeProfileItems,
+      headTextureItems:  activeHeadItems.filter(i => menuData[19].includes(i)),
+      shankTextureItems: activeShankItems.filter(i => menuData[19].includes(i)),
       type_mode: activeJewelryType === 'ring' ? 'rings' : 'bands',
     }, lookups)
-      .then(result => setRings(result.items))
+      .then(result => {
+        setRings(result.items);
+        if (result.items.length === 0) {
+          setSelectedListItem(null);
+          setSelectedImage(null);
+          setRingImages([]);
+          setRingStl(null);
+        }
+      })
       .catch(console.error);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lookups, activeJewelryType, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems]);
+  }, [lookups, activeJewelryType, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems, activeMagnifiers]);
   // ─────────────────────────────────────────────────────────────────────────
+
+  // Clear selection when jewelry type switches
+  useEffect(() => {
+    setSelectedListItem(null);
+    setSelectedImage(null);
+    setRingImages([]);
+    setRingStl(null);
+  }, [activeJewelryType]);
+
+  // Auto-select first ring when list loads or becomes valid (mirrors old frontend)
+  useEffect(() => {
+    if (rings.length > 0 && (selectedListItem === null || !ringsMap[selectedListItem])) {
+      handleListItemClick(rings[0].id);
+    }
+  }, [rings, selectedListItem, handleListItemClick, ringsMap]);
 
   // Auto-scroll selected item into view
   useEffect(() => {
@@ -1374,20 +1444,20 @@ const App: React.FC = () => {
     const isInteger = /^\d+$/.test(val); 
     if (isInteger && parseInt(val) <= 16) setShowSuffixMenu(true); 
     else setShowSuffixMenu(false); 
-    if (isValidSize(val)) setSelectedSizeItems([val]); 
+    if (validSizes.includes(val)) setSelectedSizeItems([val]);
   };
   const handleSizeInputBlur = () => { 
     if (sizeInputBuffer === "") {
       setSelectedSizeItems([]);
       return;
     }
-    if (!isValidSize(sizeInputBuffer)) setSizeInputBuffer(selectedSizeItems[0] || ""); 
+    if (!validSizes.includes(sizeInputBuffer)) setSizeInputBuffer(selectedSizeItems[0] || "");
   };
-  const handleSizeInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { setShowSuffixMenu(false); const val = e.currentTarget.value; if (isValidSize(val)) { setSelectedSizeItems([val]); e.currentTarget.blur(); } else { setSizeInputBuffer(selectedSizeItems[0] || ""); e.currentTarget.blur(); } } };
+  const handleSizeInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { setShowSuffixMenu(false); const val = e.currentTarget.value; if (validSizes.includes(val)) { setSelectedSizeItems([val]); e.currentTarget.blur(); } else { setSizeInputBuffer(selectedSizeItems[0] || ""); e.currentTarget.blur(); } } };
 
-  const currentIdx = activeMenuIndex !== null ? activeMenuIndex : 0; 
-  const currentList = menuData[currentIdx] || []; 
-  const currentTitle = menuLabels[currentIdx] || "Jewelry Type"; 
+  const currentIdx = activeMenuIndex !== null ? activeMenuIndex : 0;
+  const currentList = menuData[currentIdx] || [];
+  const currentTitle = menuLabels[currentIdx] || "Jewelry Type";
   const isAnyModalOpen = isSaveModalOpen || isResetModalOpen || showSkipWarning; 
   const libModalRef = useRef<HTMLDivElement>(null);
   const [libShrinkLevel, setLibShrinkLevel] = useState(0);
@@ -1434,17 +1504,17 @@ const App: React.FC = () => {
           <div className="flex flex-col items-center">
             <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SETTINGS</span>
             <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">{settings.map((item, idx) => ( <div key={idx} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div> ))}</div>
-            <div onClick={() => { setGemBuilderType(type); navigateTo(settingsIndex); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+            <div onClick={() => { gemPickerSetterRef.current = setSettings; setHeadGemPickerField('settings'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
           </div>
           <div className="flex flex-col items-center">
             <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SHAPE</span>
             <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">{shapes.map((item, idx) => ( <div key={idx} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div> ))}</div>
-            <div onClick={() => { setGemBuilderType(type); navigateTo(12); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+            <div onClick={() => { gemPickerSetterRef.current = setShapes; setHeadGemPickerField('shapes'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
           </div>
           <div className="flex flex-col items-center">
             <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>DIRECTION</span>
             <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">{directions.map((item, idx) => ( <div key={idx} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div> ))}</div>
-            <div onClick={() => { setGemBuilderType(type); navigateTo(13); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+            <div onClick={() => { gemPickerSetterRef.current = setDirections; setHeadGemPickerField('directions'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
           </div>
           <div className="flex flex-col items-center">
             <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SIZE</span>
@@ -1452,9 +1522,10 @@ const App: React.FC = () => {
             <div className={`w-72 h-14 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
               <input 
                 type="text" 
-                value={size === "SIZ" ? "" : size} 
-                onChange={(e) => { const val = e.target.value.replace(/[^0-9xX.]/g, ''); setSize(val); }} 
-                className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center ${isDarkMode ? 'text-white' : 'text-black'}`} 
+                value={size}
+                onChange={(e) => { const val = e.target.value.replace(/[^0-9xX.]/g, ''); setSize(val); }}
+                placeholder="0x0x0"
+                className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`}
               />
             </div>
           </div>
@@ -1464,9 +1535,10 @@ const App: React.FC = () => {
             <div className={`w-72 h-14 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
               <input 
                 type="text" 
-                value={count === "COU" ? "" : count} 
-                onChange={(e) => handleNumericCountChange(e.target.value, setCount)} 
-                className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center ${isDarkMode ? 'text-white' : 'text-black'}`} 
+                value={count}
+                onChange={(e) => handleNumericCountChange(e.target.value, setCount)}
+                placeholder="1"
+                className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} 
               />
             </div>
           </div>
@@ -1487,6 +1559,28 @@ const App: React.FC = () => {
     const isShankProfileSelected = selectedProfileItems.length > 0;
     const isShankComplete = isShankTypeSelected && isShankProfileSelected;
     const isSizeComplete = selectedSizeItems.length > 0;
+
+    if (location.pathname === '/login') {
+      return (
+        <div className="flex-1 flex items-center justify-center w-full">
+          <div className={`w-full max-w-sm p-8 border ${isDarkMode ? 'border-[#1e293b] bg-[#1f2937]' : 'border-[#e2e8f0] bg-[#f8fafc]'}`}>
+            <div className="flex items-center mb-6">
+              <h2 className={`text-2xl font-black uppercase tracking-widest flex-1 text-center ${isDarkMode ? 'text-white' : 'text-black'}`}>Login</h2>
+              <button onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/jewelry-type'); }} className={`text-xs font-black opacity-60 hover:opacity-100 transition-opacity ml-3 ${isDarkMode ? 'text-white' : 'text-black'}`}>✕</button>
+            </div>
+            <div className="flex flex-col gap-3">
+              <input type="email" placeholder="Email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={`px-4 py-2 border text-sm font-bold bg-transparent outline-none ${isDarkMode ? 'border-[#374151] text-white placeholder-gray-500' : 'border-[#cbd5e1] text-black placeholder-gray-400'}`} />
+              <input type="password" placeholder="Password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} onKeyDown={async e => { if (e.key === 'Enter') { setLoginError(null); setLoginLoading(true); try { await login(loginEmail, loginPassword); const d = await me(); setUserEmail(d.email); navigate(-1); } catch (err: any) { setLoginError(err.message || 'Login failed'); } finally { setLoginLoading(false); } } }} className={`px-4 py-2 border text-sm font-bold bg-transparent outline-none ${isDarkMode ? 'border-[#374151] text-white placeholder-gray-500' : 'border-[#cbd5e1] text-black placeholder-gray-400'}`} />
+              {loginError && <p className="text-red-500 text-xs font-bold">{loginError}</p>}
+              <button disabled={loginLoading} onClick={async () => { setLoginError(null); setLoginLoading(true); try { await login(loginEmail, loginPassword); const d = await me(); setUserEmail(d.email); navigate(-1); } catch (err: any) { setLoginError(err.message || 'Login failed'); } finally { setLoginLoading(false); } }} className="px-4 py-2 font-black uppercase tracking-widest text-sm bg-green-700 text-white hover:bg-green-800 disabled:opacity-50">
+                {loginLoading ? '...' : 'Login'}
+              </button>
+              <button disabled className={`px-4 py-2 font-black uppercase tracking-widest text-sm border opacity-30 cursor-not-allowed ${isDarkMode ? 'border-[#374151] text-gray-400' : 'border-[#cbd5e1] text-gray-600'}`}>Register</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     if (currentIdx === 4) {
       const _selectedRing = (showSummaryOverlay && selectedListItem) ? ringsMap[selectedListItem] : null;
@@ -1702,7 +1796,7 @@ const App: React.FC = () => {
                 isDarkMode ? 'bg-[#121c2e] border-[#1e293b]' : 'bg-[#f8fafc] border-[#e2e8f0]'
               } shadow-inner mb-3`}>
                 <button 
-                  onClick={() => { setGemBuilderType('main'); setEditingItemCode(null); navigateTo(targetCategoryIndex); }}
+                  onClick={() => { setTypePickerQuery(''); setHeadGemPickerField(activeJewelryType === 'ring' ? 'ring_type' : 'band_type'); setTimeout(() => typePickerInputRef.current?.focus(), 50); }}
                   className={`w-[calc(100%-4px)] h-[calc(100%-4px)] group relative flex items-center justify-center transition-all duration-300 border rounded-full ${
                     isTypeComplete 
                       ? 'border-[#00c4a7] shadow-[0_0_12px_rgba(0,196,167,0.5)] text-[#00c4a7]' 
@@ -1995,21 +2089,19 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="flex h-[calc(100vh-320px)] min-h-[500px]">
-              <div ref={scrollListRef} onScroll={handleScroll} className={`w-[480px] flex flex-col px-4 pb-4 pt-0 overflow-y-auto hide-scrollbar ${isDarkMode ? 'bg-[#111827]' : 'bg-white'}`}>
-                <div className="flex flex-col gap-1 pt-4">
+              <div ref={scrollListRef} onScroll={handleScroll} className={`w-fit flex flex-col px-5 pb-5 pt-0 overflow-y-auto hide-scrollbar ${isDarkMode ? 'bg-[#111827]' : 'bg-white'}`}>
+                <div className="flex flex-col gap-1 pt-5">
                   {filteredListItems.map((id) => {
                     const ring = ringsMap[id];
                     return (
-                    <div key={id} data-id={id} onClick={() => handleListItemClick(id)} className={`grid grid-cols-[4rem_13rem_1fr] items-center text-4xl font-black italic tracking-widest py-1 px-4 cursor-pointer transition-colors ${id === selectedListItem ? 'text-[#38bdf8]' : (isDarkMode ? 'text-white' : 'text-black')}`}>
+                    <div key={id} data-id={id} onClick={() => handleListItemClick(id)} className={`grid grid-cols-[4rem_17rem_1fr] items-center text-4xl font-black italic tracking-widest py-1 px-4 cursor-pointer transition-colors ${id === selectedListItem ? 'text-[#38bdf8]' : (isDarkMode ? 'text-white' : 'text-black')}`}>
                       <span className="truncate shrink-0">{id}</span>
                       <span className="tracking-[0.1em] truncate shrink-0">
                         {highlightMatch(String(ring?.code ?? id), searchQuery)}
                       </span>
                       <div className="flex items-center gap-4 shrink-0 justify-self-start">
-                        <button onClick={(e) => { e.stopPropagation(); handleListItemClick(id); setShowSummaryOverlay(true); setOverlayPage(0); }} className="text-[#00c4a7] italic font-black text-3xl hover:opacity-70 transition-opacity">i</button>
-                        <div onClick={(e) => { e.stopPropagation(); handlePhotoAreaClick(); }} className="cursor-pointer hover:opacity-70 transition-opacity">
-                          <Download size={32} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} strokeWidth={2.5} />
-                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setInfoRing(ring); }} className="text-[#10b981] italic font-black text-3xl hover:opacity-70 transition-opacity">i</button>
+                        {userEmail && <button onClick={(e) => { e.stopPropagation(); downloadRingFilesZip(ring); }} className={`opacity-70 hover:opacity-100 transition-opacity ${isDarkMode ? 'text-white' : 'text-black'}`}><Download size={28} strokeWidth={2} /></button>}
                       </div>
                     </div>
                     );
@@ -2056,33 +2148,63 @@ const App: React.FC = () => {
                  </button>
               </div>
               <div className={`flex-1 flex flex-col relative overflow-hidden p-1 group ${isDarkMode ? 'bg-[#111827]' : 'bg-[#f1f5f9]'}`}>
-                 <div 
+                 <div
                    id="main-photo-viewport"
-                   onClick={handlePhotoAreaClick} 
-                   className={`w-full h-full flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative cursor-pointer group transition-none overflow-hidden`}
+                   className={`w-full h-full flex items-center justify-center border ${isDarkMode ? 'border-[#1e293b] bg-[#111827]' : 'border-gray-100 bg-[#f1f5f9]'} relative cursor-default group transition-none overflow-hidden`}
                  >
-                    {selectedImage ? ( 
-                      <> 
-                        <div 
-                          className="absolute inset-0 opacity-40 grayscale-[10%]" 
-                          style={{ 
-                            backgroundImage: `url(${selectedImage})`, 
-                            backgroundSize: 'cover', 
-                            backgroundPosition: 'center', 
+                    {activePreviewTab === 'STL' && ringStl ? (
+                      <div className="absolute inset-0">
+                        <StlViewer url={ringStl} isDarkMode={isDarkMode} />
+                      </div>
+                    ) : selectedImage ? (
+                      <>
+                        <div
+                          className="absolute inset-0 opacity-40 grayscale-[10%]"
+                          style={{
+                            backgroundImage: `url(${selectedImage})`,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
                             filter: 'blur(35px)',
                             transform: 'scale(1.1)'
-                          }} 
+                          }}
                         />
-                        <img 
-                          src={selectedImage} 
-                          className="relative z-10 w-full h-full object-contain drop-shadow-2xl" 
+                        <img
+                          src={selectedImage}
+                          className="relative z-10 w-full h-full object-contain drop-shadow-2xl"
                           style={{ maxHeight: '100%', maxWidth: '100%' }}
-                          alt="Selected Item" 
-                        /> 
-                        <button onClick={(e) => { e.stopPropagation(); setShowSummaryOverlay(true); setOverlayPage(1); }} className="absolute z-20 top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded transition-colors border border-white/10 group-hover:opacity-100 opacity-0 transform group-hover:scale-110"><Maximize2 size={32} /></button> 
-                      </> 
+                          alt="Selected Item"
+                        />
+                        <button onClick={(e) => { e.stopPropagation(); setShowSummaryOverlay(true); setOverlayPage(1); }} className="absolute z-20 top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded transition-colors border border-white/10 group-hover:opacity-100 opacity-0 transform group-hover:scale-110"><Maximize2 size={32} /></button>
+                      </>
                     ) : null}
+                    {activePreviewTab === 'IMAGE' && ringImages.length > 1 && ringImages.indexOf(selectedImage ?? '') > 0 && (
+                      <button onClick={() => { const i = ringImages.indexOf(selectedImage ?? ''); setSelectedImage(ringImages[i - 1]); }} className={`absolute left-2 top-1/2 -translate-y-1/2 z-20 ${isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'} transition-colors opacity-70 hover:opacity-100`}><ChevronLeft size={64} strokeWidth={1.5} /></button>
+                    )}
+                    {activePreviewTab === 'IMAGE' && (() => { const i = ringImages.indexOf(selectedImage ?? ''); return i !== -1 && i < ringImages.length - 1; })() && (
+                      <button onClick={() => { const i = ringImages.indexOf(selectedImage ?? ''); setSelectedImage(ringImages[i + 1]); }} className={`absolute right-2 top-1/2 -translate-y-1/2 z-20 ${isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'} transition-colors opacity-70 hover:opacity-100`}><ChevronRight size={64} strokeWidth={1.5} /></button>
+                    )}
                  </div>
+                 {(ringImages.length > 0 || ringStl) && (
+                   <div className={`flex items-center justify-start gap-2 overflow-x-auto overflow-y-hidden hide-scrollbar shrink-0 p-2 w-full h-32 relative z-10 ${isDarkMode ? 'bg-[#0b0f19]' : 'bg-[#e2e8f0]'}`}>
+                     {ringImages.map((url, i) => (
+                       <img
+                         key={i}
+                         src={url}
+                         alt={`view-${i + 1}`}
+                         onClick={(e) => { e.stopPropagation(); setActivePreviewTab('IMAGE'); setSelectedImage(url); }}
+                         className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${activePreviewTab === 'IMAGE' && url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
+                       />
+                     ))}
+                     {ringStl && (
+                       <button
+                         onClick={(e) => { e.stopPropagation(); setActivePreviewTab('STL'); }}
+                         className={`h-24 w-24 shrink-0 border-2 flex items-center justify-center text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer ${activePreviewTab === 'STL' ? 'border-[#38bdf8] text-[#38bdf8]' : isDarkMode ? 'border-transparent text-gray-400 hover:border-gray-600 hover:text-white' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-black'}`}
+                       >
+                         3D
+                       </button>
+                     )}
+                   </div>
+                 )}
               </div>
             </div>
           </div>
@@ -2130,13 +2252,13 @@ const App: React.FC = () => {
 
           {/* Section tabs */}
           <div className="flex gap-16 mb-10">
-            <button onClick={() => toggleOption(16, "TYPE", isTypeSel)} className={sectionBtnClass(isTypeSel, !isTypeSel)}>
+            <button onClick={() => setHeadGemPickerField('shank_type')} className={sectionBtnClass(isTypeSel, !isTypeSel)}>
               TYPE
             </button>
-            <button onClick={() => { setIsShankSubflow(true); toggleOption(16, "Texture&Details", isTextureSel); }} className={sectionBtnClass(isTextureSel, false)}>
+            <button onClick={() => { setIsShankSubflow(true); setHeadGemPickerField('shank_texture'); }} className={sectionBtnClass(isTextureSel, false)}>
               Texture&amp;Details
             </button>
-            <button onClick={() => toggleOption(16, "PROFILE", isProfileSel)} className={sectionBtnClass(isProfileSel, !isProfileSel)}>
+            <button onClick={() => setHeadGemPickerField('profile')} className={sectionBtnClass(isProfileSel, !isProfileSel)}>
               PROFILE
             </button>
           </div>
@@ -2219,10 +2341,10 @@ const App: React.FC = () => {
 
           {/* Section tabs */}
           <div className="flex gap-24 mb-10">
-            <button onClick={() => toggleOption(5, "HEAD", isHeadSel)} className={sectionBtnClass(isHeadSel, !isHeadSel)}>
+            <button onClick={() => setHeadGemPickerField('head_setting')} className={sectionBtnClass(isHeadSel, !isHeadSel)}>
               HEAD
             </button>
-            <button onClick={() => toggleOption(5, "Texture&Details", isTextureSel)} className={sectionBtnClass(isTextureSel, false)}>
+            <button onClick={() => { setIsShankSubflow(false); setHeadGemPickerField('head_texture'); }} className={sectionBtnClass(isTextureSel, false)}>
               Texture&amp;Details
             </button>
           </div>
@@ -2237,34 +2359,34 @@ const App: React.FC = () => {
               <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">
                 {mainGemsSettings.map((item, i) => <div key={i} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div>)}
               </div>
-              <div onClick={() => { setGemBuilderType('main'); navigateTo(11); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+              <div onClick={() => { gemPickerSetterRef.current = setMainGemsSettings; setHeadGemPickerField('settings'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
             </div>
             <div className="flex flex-col items-center">
               <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SHAPE</span>
               <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">
                 {mainGemsShapes.map((item, i) => <div key={i} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div>)}
               </div>
-              <div onClick={() => { setGemBuilderType('main'); navigateTo(12); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+              <div onClick={() => { gemPickerSetterRef.current = setMainGemsShapes; setHeadGemPickerField('shapes'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
             </div>
             <div className="flex flex-col items-center">
               <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>DIRECTION</span>
               <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">
                 {mainGemsDirections.map((item, i) => <div key={i} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div>)}
               </div>
-              <div onClick={() => { setGemBuilderType('main'); navigateTo(13); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+              <div onClick={() => { gemPickerSetterRef.current = setMainGemsDirections; setHeadGemPickerField('directions'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
             </div>
             <div className="flex flex-col items-center">
               <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SIZE</span>
               <div className="h-6 mb-1" />
               <div className={`w-72 h-14 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
-                <input type="text" value={mainGemsSize === "SIZ" ? "" : mainGemsSize} onChange={(e) => { const val = e.target.value.replace(/[^0-9xX.]/g, ''); setMainGemsSize(val); }} className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center ${isDarkMode ? 'text-white' : 'text-black'}`} />
+                <input type="text" value={mainGemsSize} onChange={(e) => { const val = e.target.value.replace(/[^0-9xX.]/g, ''); setMainGemsSize(val); }} placeholder="0x0x0" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
               </div>
             </div>
             <div className="flex flex-col items-center">
               <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>COUNT</span>
               <div className="h-6 mb-1" />
               <div className={`w-72 h-14 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
-                <input type="text" value={mainGemsCount === "COU" ? "" : mainGemsCount} onChange={(e) => handleNumericCountChange(e.target.value, setMainGemsCount)} className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center ${isDarkMode ? 'text-white' : 'text-black'}`} />
+                <input type="text" value={mainGemsCount} onChange={(e) => handleNumericCountChange(e.target.value, setMainGemsCount)} placeholder="1" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
               </div>
             </div>
           </div>
@@ -2380,20 +2502,28 @@ const App: React.FC = () => {
   return (
     <div className={`min-h-screen flex flex-col items-center relative overflow-hidden ${isDarkMode ? 'bg-[#111827] text-[#f9fafb]' : 'bg-[#ffffff] text-[#1f2937]'}`}>
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
-      <input type="file" ref={fileInput3DMRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile3dm(f); setUploadedAssets(prev => ({ ...prev, '3DM': true })); } e.target.value = ''; }} className="hidden" accept=".3dm" />
+      <input type="file" ref={fileInput3DMRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) { console.log('[3DM debug] name:', f.name, '| path:', (f as any).path, '| webkitRelativePath:', f.webkitRelativePath); setFile3dm(f); setUploadedAssets(prev => ({ ...prev, '3DM': true })); if (!jobName) setJobName(f.name.replace(/\.3dm$/i, '')); } e.target.value = ''; }} className="hidden" accept=".3dm" />
       <input type="file" ref={fileInputSTLRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFileStl(f); setUploadedAssets(prev => ({ ...prev, 'STL': true })); } e.target.value = ''; }} className="hidden" accept=".stl" />
       <input type="file" ref={fileInputMediaRef} onChange={(e) => { const files = e.target.files; if (files && files.length > 0) { setFileMedia(prev => [...prev, ...Array.from(files)]); setUploadedAssets(prev => ({ ...prev, 'MEDIA': true })); } e.target.value = ''; }} className="hidden" accept="image/*" multiple />
       <div className={`w-full flex flex-col items-center duration-0 ${isAnyModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <header className={`fixed top-0 left-0 right-0 h-10 flex items-center justify-between px-0 z-50 transform ${isDarkMode ? 'bg-[#1f2937]' : 'bg-[#e5e7eb] border-b border-[#d1d5db]'} shadow-sm`}>
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <h1 
-              onClick={() => { setActiveMenuIndex(0); setMenuHistory([0]); }} 
+              onClick={() => navigate('/jewelry-type')}
               className="text-xl font-black uppercase tracking-[0.35em] leading-none text-gray-500 transition-all duration-300 cursor-pointer pointer-events-auto hover:opacity-70"
             >
               SLS LIBRARY
             </h1>
           </div>
-          <div className="flex items-center h-full pr-4 z-10 ml-auto">
+          <div className="flex items-center h-full pr-4 z-10 ml-auto gap-3">
+            {userEmail ? (
+              <>
+                <span className={`text-xs font-bold tracking-wider truncate max-w-[160px] ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{userEmail}</span>
+                <button onClick={() => { clearAuthToken(); setUserEmail(null); navigate('/jewelry-type'); }} title="Logout" className={`opacity-60 hover:opacity-100 transition-opacity ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}><LogOut size={14} /></button>
+              </>
+            ) : (
+              <button onClick={() => navigate('/login')} className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 border ${isDarkMode ? 'border-gray-600 text-gray-400 hover:text-white' : 'border-gray-400 text-gray-600 hover:text-black'}`}>Login</button>
+            )}
             <div onClick={() => setIsDarkMode(!isDarkMode)} className={`relative flex items-center w-12 h-6 rounded-full border p-0.5 cursor-pointer transition-colors ${isDarkMode ? 'bg-[#111827] border-[#1e293b]' : 'bg-[#ffffff] border-[#cbd5e1]'} shadow-sm`}>
               <div className={`absolute w-4 h-4 rounded-full transform flex items-center justify-center shadow-md transition-transform duration-200 ${isDarkMode ? 'translate-x-0 bg-[#374151] text-white' : 'translate-x-7 bg-white text-[#f59e0b]'}`}>{isDarkMode ? <Moon size={10} /> : <Sun size={10} />}</div>
             </div>
@@ -2617,8 +2747,7 @@ const App: React.FC = () => {
                   });
                 });
 
-                const isAssetsUploaded = !!(uploadedAssets['3DM'] && uploadedAssets['STL'] && uploadedAssets['MEDIA']);
-                const isReadyToAccept = isAllCoreSelected && isAssetsUploaded;
+                const isReadyToAccept = isAllCoreSelected;
 
                 return (
                   <div className="mt-0 mb-6 w-full shrink-0 px-10 grid grid-cols-[150px_1fr_auto] items-center">
@@ -2646,14 +2775,10 @@ const App: React.FC = () => {
                     <div className="col-start-3 flex items-center">
                       <button
                         onClick={handleAccept}
-                        className={`px-12 py-2 border-2 rounded-full text-3xl font-black uppercase tracking-[0.1em] transition-all ${
-                          isReadyToAccept && uploadStatus !== 'uploading'
-                            ? 'border-[#00c4a7] text-[#00c4a7] hover:bg-[#00c4a7]/10'
-                            : 'border-[#ef4444] text-[#ef4444] cursor-not-allowed opacity-50'
-                        }`}
-                        disabled={!isReadyToAccept || uploadStatus === 'uploading'}
+                        className={`px-12 py-2 border-2 rounded-full text-3xl font-black uppercase tracking-[0.1em] transition-all border-[#00c4a7] text-[#00c4a7] hover:bg-[#00c4a7]/10 ${uploadStatus === 'uploading' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        disabled={uploadStatus === 'uploading'}
                       >
-                        {uploadStatus === 'uploading' ? '…' : 'ACCEPT'}
+                        {uploadStatus === 'uploading' ? '…' : 'SAVE'}
                       </button>
                     </div>
                   </div>
@@ -2664,45 +2789,29 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isLoginModalOpen && (
-        <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4">
-          <div className={`w-96 p-8 rounded-lg shadow-2xl flex flex-col gap-4 ${isDarkMode ? 'bg-[#1f2937] text-white' : 'bg-white text-black'}`}>
-            <h3 className="text-2xl font-black uppercase tracking-widest text-center">Login Required</h3>
-            <input
-              type="email"
-              placeholder="Email"
-              value={loginEmail}
-              onChange={e => setLoginEmail(e.target.value)}
-              className={`w-full px-4 py-2 rounded border text-base ${isDarkMode ? 'bg-[#111827] border-gray-600 text-white placeholder-gray-400' : 'bg-gray-100 border-gray-300 text-black'}`}
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={loginPassword}
-              onChange={e => setLoginPassword(e.target.value)}
-              onKeyDown={async e => {
-                if (e.key === 'Enter') {
-                  setLoginLoading(true); setLoginError(null);
-                  try { await login(loginEmail, loginPassword); setIsLoginModalOpen(false); setLoginEmail(''); setLoginPassword(''); }
-                  catch (err) { setLoginError(err instanceof Error ? err.message : 'Login failed'); }
-                  finally { setLoginLoading(false); }
-                }
-              }}
-              className={`w-full px-4 py-2 rounded border text-base ${isDarkMode ? 'bg-[#111827] border-gray-600 text-white placeholder-gray-400' : 'bg-gray-100 border-gray-300 text-black'}`}
-            />
-            {loginError && <div className="text-[#ef4444] text-sm font-bold">{loginError}</div>}
-            <div className="flex gap-3">
-              <button onClick={() => { setIsLoginModalOpen(false); setLoginError(null); }} className={`flex-1 py-2 rounded-full font-bold uppercase tracking-widest border transition-all ${isDarkMode ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>Cancel</button>
-              <button
-                disabled={loginLoading}
-                onClick={async () => {
-                  setLoginLoading(true); setLoginError(null);
-                  try { await login(loginEmail, loginPassword); setIsLoginModalOpen(false); setLoginEmail(''); setLoginPassword(''); }
-                  catch (err) { setLoginError(err instanceof Error ? err.message : 'Login failed'); }
-                  finally { setLoginLoading(false); }
-                }}
-                className="flex-1 py-2 rounded-full font-bold uppercase tracking-widest bg-[#00c4a7] hover:bg-[#00a08a] text-[#111827] transition-all disabled:opacity-50"
-              >{loginLoading ? '…' : 'LOGIN'}</button>
+
+      {infoRing && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }} onClick={() => setInfoRing(null)}>
+          <div style={{ background: '#0f1b2b', padding: '24px', borderRadius: '8px', minWidth: '320px', color: '#fff' }} onClick={(e) => e.stopPropagation()}>
+            {(activeJewelryType === 'band' || activeJewelryType === 'bands') ? (<>
+              <div style={{ fontSize: '18px', marginBottom: '12px' }}>Band Info</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>TYPE: </span>{infoRing.band_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>PROFILE: </span>{infoRing.profile_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>US SIZE: </span>{infoRing.finger_size || '—'}</div>
+            </>) : (<>
+              <div style={{ fontSize: '18px', marginBottom: '12px' }}>Ring Info</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>TYPE: </span>{infoRing.ring_type_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>HEAD SETTINGS: </span>{infoRing.head_setting_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>HEAD TEXTURES: </span>{infoRing.head_texture_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>SHANK TYPES: </span>{infoRing.shank_type_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>SHANK TEXTURES: </span>{infoRing.shank_texture_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>PROFILE: </span>{infoRing.profile_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>US SIZE: </span>{infoRing.finger_size || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>MAIN GEM: </span>{infoRing.head_gem ? [infoRing.head_gem.settings, infoRing.head_gem.shape, infoRing.head_gem.direction, infoRing.head_gem.size && `sz:${infoRing.head_gem.size}`, `×${infoRing.head_gem.count}`].filter(Boolean).join(' / ') : '—'}</div>
+              <div style={{ display: 'flex' }}><span style={{ color: 'red', fontWeight: 700, marginRight: 5, flexShrink: 0 }}>SHANK GEM: </span><div>{infoRing.shank_gems?.length ? infoRing.shank_gems.map((g, i) => <div key={i}>{[g.settings, g.shape, g.direction, g.size && `sz:${g.size}`, `×${g.count}`].filter(Boolean).join(' / ')}</div>) : '—'}</div></div>
+            </>)}
+            <div style={{ marginTop: '16px', textAlign: 'right' }}>
+              <button onClick={() => setInfoRing(null)}>Close</button>
             </div>
           </div>
         </div>
@@ -2787,6 +2896,91 @@ const App: React.FC = () => {
         </div>
       )}
       <div className={`fixed bottom-0 left-0 right-0 h-[3px] ${isDarkMode ? 'bg-[#1f2937]' : 'bg-[#e5e7eb]'} z-[60]`} />
+
+      {/* ── headGemPickerField popups (old-frontend style) ── */}
+      {headGemPickerField === 'ring_type' && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }} onClick={() => setHeadGemPickerField(null)}>
+          <div style={{ background: isDarkMode ? '#0f1b2b' : '#fff', padding: '24px', borderRadius: '8px', minWidth: '320px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') setHeadGemPickerField(null); }}>
+            <input ref={typePickerInputRef} value={typePickerQuery} onChange={e => setTypePickerQuery(e.target.value)} placeholder="Search..." style={{ width: '100%', marginBottom: '12px', padding: '8px 10px', borderRadius: '4px', border: isDarkMode ? '1px solid #374151' : '1px solid #d1d5db', background: isDarkMode ? '#0a1628' : '#f9fafb', color: isDarkMode ? '#fff' : '#000', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+              {(() => {
+                const filtered = menuData[2].filter(x => x.toLowerCase().includes(typePickerQuery.trim().toLowerCase()));
+                if (filtered.length === 0) return <div style={{ gridColumn: '1/-1', textAlign: 'center', opacity: 0.5, padding: '12px' }}>No results</div>;
+                return filtered.map((item, i) => {
+                  const sel = selectedDetailItems.includes(item);
+                  return <div key={i} onClick={() => setSelectedDetailItems(prev => sel ? prev.filter(x => x !== item) : [...prev, item])} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${sel ? (isDarkMode ? 'text-white border-white bg-[#1f2937]' : 'text-black border-black bg-[#e2e8f0]') : (isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]')}`}>{sel ? '✓ ' : ''}{item}</div>;
+                });
+              })()}
+            </div>
+            <div style={{ marginTop: '16px', textAlign: 'center' }}>
+              <button onClick={() => setHeadGemPickerField(null)} className={`text-sm font-black uppercase tracking-widest px-6 py-2 border ${isDarkMode ? 'border-[#374151] text-gray-300 hover:text-white hover:border-white' : 'border-gray-300 text-gray-600 hover:text-black hover:border-black'}`}>DONE</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {headGemPickerField === 'band_type' && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }} onClick={() => setHeadGemPickerField(null)}>
+          <div style={{ background: isDarkMode ? '#0f1b2b' : '#fff', padding: '24px', borderRadius: '8px', minWidth: '320px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') setHeadGemPickerField(null); }}>
+            <input ref={typePickerInputRef} value={typePickerQuery} onChange={e => setTypePickerQuery(e.target.value)} placeholder="Search..." style={{ width: '100%', marginBottom: '12px', padding: '8px 10px', borderRadius: '4px', border: isDarkMode ? '1px solid #374151' : '1px solid #d1d5db', background: isDarkMode ? '#0a1628' : '#f9fafb', color: isDarkMode ? '#fff' : '#000', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+              {(() => {
+                const filtered = menuData[3].filter(x => x.toLowerCase().includes(typePickerQuery.trim().toLowerCase()));
+                if (filtered.length === 0) return <div style={{ gridColumn: '1/-1', textAlign: 'center', opacity: 0.5, padding: '12px' }}>No results</div>;
+                return filtered.map((item, i) => {
+                  const sel = selectedDetailItems.includes(item);
+                  return <div key={i} onClick={() => setSelectedDetailItems(prev => sel ? prev.filter(x => x !== item) : [...prev, item])} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${sel ? (isDarkMode ? 'text-white border-white bg-[#1f2937]' : 'text-black border-black bg-[#e2e8f0]') : (isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]')}`}>{sel ? '✓ ' : ''}{item}</div>;
+                });
+              })()}
+            </div>
+            <div style={{ marginTop: '16px', textAlign: 'center' }}>
+              <button onClick={() => setHeadGemPickerField(null)} className={`text-sm font-black uppercase tracking-widest px-6 py-2 border ${isDarkMode ? 'border-[#374151] text-gray-300 hover:text-white hover:border-white' : 'border-gray-300 text-gray-600 hover:text-black hover:border-black'}`}>DONE</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {headGemPickerField !== null && headGemPickerField !== 'ring_type' && headGemPickerField !== 'band_type' && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }} onClick={() => setHeadGemPickerField(null)}>
+          <div style={{ background: isDarkMode ? '#0f1b2b' : '#fff', padding: '24px', borderRadius: '8px', minWidth: '320px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') setHeadGemPickerField(null); }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+              {headGemPickerField === 'head_setting'
+                ? menuData[7].map((item, i) => {
+                    const sel = selectedHeadItems.includes(item);
+                    return <div key={i} onClick={() => { setSelectedHeadItems(prev => sel ? prev.filter(x => x !== item) : [...prev, item]); setSelectedOptions(prev => ({ ...prev, [7]: sel ? (prev[7] || []).filter(x => x !== item) : [...(prev[7] || []), item] })); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${sel ? (isDarkMode ? 'text-white border-white bg-[#1f2937]' : 'text-black border-black bg-[#e2e8f0]') : (isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]')}`}>{sel ? '✓ ' : ''}{item}</div>;
+                  })
+                : headGemPickerField === 'head_texture'
+                ? menuData[19].map((item, i) => {
+                    const sel = selectedHeadItems.includes(item);
+                    return <div key={i} onClick={() => { setSelectedHeadItems(prev => sel ? prev.filter(x => x !== item) : [...prev, item]); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${sel ? (isDarkMode ? 'text-white border-white bg-[#1f2937]' : 'text-black border-black bg-[#e2e8f0]') : (isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]')}`}>{sel ? '✓ ' : ''}{item}</div>;
+                  })
+                : headGemPickerField === 'shank_type'
+                ? menuData[14].map((item, i) => {
+                    const sel = selectedShankItems.includes(item);
+                    return <div key={i} onClick={() => { setSelectedShankItems(prev => sel ? prev.filter(x => x !== item) : [...prev, item]); setSelectedOptions(prev => ({ ...prev, [14]: sel ? (prev[14] || []).filter(x => x !== item) : [...(prev[14] || []), item] })); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${sel ? (isDarkMode ? 'text-white border-white bg-[#1f2937]' : 'text-black border-black bg-[#e2e8f0]') : (isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]')}`}>{sel ? '✓ ' : ''}{item}</div>;
+                  })
+                : headGemPickerField === 'profile'
+                ? menuData[15].map((item, i) => {
+                    const sel = selectedProfileItems.includes(item);
+                    return <div key={i} onClick={() => { setSelectedProfileItems(prev => sel ? prev.filter(x => x !== item) : [...prev, item]); setSelectedOptions(prev => ({ ...prev, [15]: sel ? (prev[15] || []).filter(x => x !== item) : [...(prev[15] || []), item] })); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${sel ? (isDarkMode ? 'text-white border-white bg-[#1f2937]' : 'text-black border-black bg-[#e2e8f0]') : (isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]')}`}>{sel ? '✓ ' : ''}{item}</div>;
+                  })
+                : headGemPickerField === 'shank_texture'
+                ? menuData[19].map((item, i) => {
+                    const sel = selectedShankItems.includes(item);
+                    return <div key={i} onClick={() => { setSelectedShankItems(prev => sel ? prev.filter(x => x !== item) : [...prev, item]); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${sel ? (isDarkMode ? 'text-white border-white bg-[#1f2937]' : 'text-black border-black bg-[#e2e8f0]') : (isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]')}`}>{sel ? '✓ ' : ''}{item}</div>;
+                  })
+                : (headGemPickerField === 'settings' || headGemPickerField === 'shapes' || headGemPickerField === 'directions')
+                ? (headGemPickerField === 'settings' ? menuData[11] : headGemPickerField === 'shapes' ? menuData[12] : menuData[13]).map((opt, i) => (
+                    <div key={i} onClick={() => { gemPickerSetterRef.current?.([opt]); setHeadGemPickerField(null); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]'}`}>{opt}</div>
+                  ))
+                : null}
+            </div>
+            {(headGemPickerField !== 'settings' && headGemPickerField !== 'shapes' && headGemPickerField !== 'directions') && (
+              <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                <button onClick={() => setHeadGemPickerField(null)} className={`text-sm font-black uppercase tracking-widest px-6 py-2 border ${isDarkMode ? 'border-[#374151] text-gray-300 hover:text-white hover:border-white' : 'border-gray-300 text-gray-600 hover:text-black hover:border-black'}`}>DONE</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

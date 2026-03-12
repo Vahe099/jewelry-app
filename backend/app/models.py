@@ -224,11 +224,16 @@ class Rings(Base):
 
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow)
 
-    finger_size_id: Mapped[int] = mapped_column(
-        ForeignKey("finger_sizes.id", ondelete="RESTRICT", onupdate="CASCADE"),
-        nullable=False
+    user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
     )
-    finger_size: Mapped[FingerSizes] = relationship(back_populates="rings", lazy="selectin")
+
+    finger_size_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("finger_sizes.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True
+    )
+    finger_size: Mapped[Optional[FingerSizes]] = relationship(back_populates="rings", lazy="selectin")
 
     # many-to-many
     ring_types: Mapped[List[RingType]] = relationship(

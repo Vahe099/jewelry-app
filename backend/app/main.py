@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, UploadFile, File, Body
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -477,11 +477,11 @@ def rings_list(request: Request, db: Session = Depends(get_db)):
 # -------------------------
 @app.post("/create-ring")
 def create_ring_submit(
-    file_3dm: UploadFile = File(...),
-    file_stl: UploadFile = File(...),
+    file_3dm: Optional[UploadFile] = File(default=None),
+    file_stl: Optional[UploadFile] = File(default=None),
     pictures: List[UploadFile] = File(default=[]),
 
-    finger_size_id: int = Form(...),
+    finger_size_id: Optional[int] = Form(default=None),
 
     ring_type_ids: List[int] = Form(default=[]),
     head_setting_ids: List[int] = Form(default=[]),
@@ -498,7 +498,7 @@ def create_ring_submit(
     band_gems_json: str = Form(default="[]"),
 
     db: Session = Depends(get_db),
-    _: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ):
     head_gems: List[Dict[str, Any]] = json.loads(head_gems_json or "[]")
     shank_gems: List[Dict[str, Any]] = json.loads(shank_gems_json or "[]")
@@ -553,15 +553,16 @@ def create_ring_submit(
     final_pics_folder = None
 
     try:
-        if safe_ext(file_3dm.filename) != ".3dm":
-            raise HTTPException(400, "3DM file must have .3dm extension")
-        if safe_ext(file_stl.filename) != ".stl":
-            raise HTTPException(400, "STL file must have .stl extension")
-
-        with open(tmp_3dm, "wb") as f:
-            shutil.copyfileobj(file_3dm.file, f)
-        with open(tmp_stl, "wb") as f:
-            shutil.copyfileobj(file_stl.file, f)
+        if file_3dm is not None:
+            if safe_ext(file_3dm.filename) != ".3dm":
+                raise HTTPException(400, "3DM file must have .3dm extension")
+            with open(tmp_3dm, "wb") as f:
+                shutil.copyfileobj(file_3dm.file, f)
+        if file_stl is not None:
+            if safe_ext(file_stl.filename) != ".stl":
+                raise HTTPException(400, "STL file must have .stl extension")
+            with open(tmp_stl, "wb") as f:
+                shutil.copyfileobj(file_stl.file, f)
 
         for i, pic in enumerate(pictures or [], start=1):
             extp = safe_ext(pic.filename)
@@ -575,7 +576,8 @@ def create_ring_submit(
             path_3dm="PENDING",
             path_stl="PENDING",
             pictures_folder="PENDING",
-            finger_size_id=finger_size_id,
+            finger_size_id=finger_size_id or None,
+            user_id=current_user.id,
         )
         db.add(ring)
         db.flush()
@@ -583,21 +585,22 @@ def create_ring_submit(
         rings_id = ring.id
         new_base = 10000000 + rings_id
 
-        final_3dm = SAVE_3DM / f"{new_base}.3dm"
-        final_stl = SAVE_STL / f"{new_base}.stl"
+        if file_3dm is not None:
+            final_3dm = SAVE_3DM / f"{new_base}.3dm"
+            shutil.move(str(tmp_3dm), str(final_3dm))
+        if file_stl is not None:
+            final_stl = SAVE_STL / f"{new_base}.stl"
+            shutil.move(str(tmp_stl), str(final_stl))
         final_pics_folder = SAVE_PICS / str(new_base)
         final_pics_folder.mkdir(parents=True, exist_ok=True)
-
-        shutil.move(str(tmp_3dm), str(final_3dm))
-        shutil.move(str(tmp_stl), str(final_stl))
 
         for i, p in enumerate(sorted(tmp_pics.glob("*")), start=1):
             extp = p.suffix.lower()
             dst = final_pics_folder / f"{new_base}_{i:02d}{extp}"
             shutil.move(str(p), str(dst))
 
-        ring.path_3dm = str(final_3dm)
-        ring.path_stl = str(final_stl)
+        ring.path_3dm = str(final_3dm) if final_3dm else ""
+        ring.path_stl = str(final_stl) if final_stl else ""
         ring.pictures_folder = str(final_pics_folder)
 
 
