@@ -1,49 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Pencil, X, Moon, Sun, Search, ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2, Check, Download, Plus, Trash2, LogOut } from 'lucide-react';
-import { fetchLookups, searchRings, createRing, fetchRingFiles, matchIds, login, me, getAuthToken, clearAuthToken, type Lookups, type Ring } from './api/jewelry';
+import { fetchLookups, searchRings, createRing, fetchRingFiles, fetchCustomers, createCustomer, matchIds, login, me, getAuthToken, clearAuthToken, type Lookups, type Ring, type Customer } from './api/jewelry';
 import { getBaseUrl } from './api/client';
 import JSZip from 'jszip';
 import StlViewer from './components/StlViewer';
 
 // Define constants for ring sizes and menu labels
 const INTEGER_SIZE_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"];
-const CUSTOMER_NAMES = [
-  "Adam Warlock", "Alejandra Jones", "Alex Summers", "Alexander Wright", "Alicia Masters",
-  "Amara Okafor", "America Chavez", "Anna Marie", "Aria Gupta", "Arthur Curry",
-  "Barry Allen", "Belasco", "Ben Grimm", "Ben Reilly", "Benjamin Lee",
-  "Betsy Braddock", "Blackheart", "Blind Al", "Bobby Drake", "Bruce Wayne",
-  "Bucky Barnes", "Carol Danvers", "Carter Slade", "Cassie Lang", "Charles Xavier",
-  "Charlotte Smith", "Chloe Lefebvre", "Clark Kent", "Cletus Kasady", "Clint Barton",
-  "Daimon Hellstrom", "Daniel Kim", "Danny Ketch", "Danny Rand", "David Haller",
-  "David Miller", "Diana Prince", "Dopinder", "Drax the Destroyer", "Eddie Brock",
-  "Elena Rodriguez", "Erik Lehnsherr", "Ethan Hunt", "Felicity Smoak", "Flash Thompson",
-  "Foggy Nelson", "Francis Freeman", "Frank Castle", "Franklin Richards", "Gabriel Santos",
-  "Gabriel Summers", "Gamora", "Groot", "Gwen Stacy", "Gwenpool",
-  "Hal Jordan", "Hank McCoy", "Harry Osborn", "Hiroshi Sato", "Hobie Brown",
-  "Hope Summers", "Hope van Dyne", "Iris West", "Isabella Garcia", "Isabella Rossi",
-  "Jack Hammer", "James Wilson", "Jean Grey", "Jennifer Kale", "Jennifer Walters",
-  "Jessica Jones", "Johnny Blaze", "Johnny Storm", "John Stewart", "Jubilation Lee",
-  "Kamala Khan", "Kara Danvers", "Karen Page", "Kate Bishop", "Kevin Sydney",
-  "Kitty Pryde", "Kristoff Vernard", "Kurt Wagner", "Kushala", "Leo Petrov",
-  "Liam O'Connor", "Lilith", "Logan Howlett", "Loki Laufeyson", "Lorna Dane",
-  "Lucas Muller", "Lucas Varga", "Luke Cage", "Lyja", "Lyra",
-  "Mantiss", "Marc Spector", "Marcus Thorne", "Mateo Silva", "Matt Murdock",
-  "Mayday Parker", "Mephisto", "Mia Tanaka", "Miguel O'Hara", "Miles Morales",
-  "Natasha Romanoff", "Nathan Summers", "Nathaniel Grey", "Nathaniel Richards", "Nebula",
-  "Neena Thurman", "Noah Schmidt", "Noble Kale", "Norman Osborn", "Norrin Radd",
-  "Oliver Quinn", "Olivia Dubois", "Ororo Munroe", "Otto Octavius", "Pavitr Prabhakar",
-  "Penny Parker", "Peter B. Parker", "Peter Maximoff", "Peter Parker", "Peter Quill",
-  "Phyla-Vell", "Piotr Rasputin", "Rachel Summers", "Raven Darkholme", "Reed Richards",
-  "Remy LeBeau", "Robbie Reyes", "Rocket Raccoon", "Russell Collins", "Sam Wilson",
-  "Satana Hellstrom", "Scott Lang", "Scott Summers", "Sean Cassidy", "Selina Kyle",
-  "Shalla-Bal", "Sienna Jones", "Sofia Martinez", "Sophia Chen", "Stephen Strange",
-  "Steve Rogers", "Sue Storm", "T'Challa", "Thor Odinson", "Tony Stark",
-  "Valeria Richards", "Vanessa Carlysle", "Victor Stone", "Victor von Doom", "Wade Wilson",
-  "Wally West", "Wanda Maximoff", "Warren Worthington", "William Brown", "Wilson Fisk",
-  "Wyatt Wingfoot", "Yara Al-Sayed", "Yondu Udonta", "Yukio", "Zara Ahmed",
-  "Zarathos"
-];
 const SUFFIX_OPTIONS = [".25", ".5", ".75"];
 
 // ── Label-to-DB normalization maps ────────────────────────────────────────────
@@ -104,11 +68,7 @@ interface ConfigData {
   selectedShankItems: string[];
   selectedProfileItems: string[];
   selectedSizeItems: string[];
-  mainGemsSettings: string[];
-  mainGemsShapes: string[];
-  mainGemsDirections: string[];
-  mainGemsSize: string;
-  mainGemsCount: string;
+  mainGemRows: MainGemRow[];
   headSecSettings: string[];
   headSecShapes: string[];
   headSecDirections: string[];
@@ -131,11 +91,7 @@ const initialConfig = (): ConfigData => ({
   selectedShankItems: [],
   selectedProfileItems: [],
   selectedSizeItems: [],
-  mainGemsSettings: [],
-  mainGemsShapes: [],
-  mainGemsDirections: [],
-  mainGemsSize: "",
-  mainGemsCount: "",
+  mainGemRows: [mkMainGem()],
   headSecSettings: [],
   headSecShapes: [],
   headSecDirections: [],
@@ -153,12 +109,16 @@ const initialConfig = (): ConfigData => ({
 
 type ShankGemRow = { settings: string; settingId: number | null; shapes: string; directions: string; size: string; count: string };
 const mkShankGem = (): ShankGemRow => ({ settings: '', settingId: null, shapes: '', directions: '', size: '', count: '' });
+type HeadSecGemRow = { settings: string; settingId: number | null; shapes: string; directions: string; size: string; count: string };
+const mkHeadSecGem = (): HeadSecGemRow => ({ settings: '', settingId: null, shapes: '', directions: '', size: '', count: '' });
+type MainGemRow = { settings: string; settingId: number | null; shapes: string; directions: string; size: string; count: string };
+const mkMainGem = (): MainGemRow => ({ settings: '', settingId: null, shapes: '', directions: '', size: '', count: '' });
 
 const App: React.FC = () => {
   const detailsDropdownRef = useRef<HTMLDivElement>(null);
   const customerDropdownRef = useRef<HTMLDivElement>(null);
-  const customerListRef = useRef<HTMLDivElement>(null);
-  const customerTrackRef = useRef<HTMLDivElement>(null);
+  const customerListRef = useRef<HTMLUListElement>(null);
+  const customerInputRef = useRef<HTMLInputElement>(null);
   const scrollListRef = useRef<HTMLDivElement>(null);
   const scrollTrackRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -166,33 +126,52 @@ const App: React.FC = () => {
   const fileInputSTLRef = useRef<HTMLInputElement>(null);
   const fileInputMediaRef = useRef<HTMLInputElement>(null);
   const typePickerInputRef = useRef<HTMLInputElement>(null);
+  // Tracks the last jewelry type we cleared preview state for, so the URL sync
+  // effect can do it atomically (same render) without a separate effect.
+  const prevJewelryTypeRef = useRef<'ring' | 'band'>(
+    window.location.pathname === '/bands' ? 'band' : 'ring'
+  );
 
   const navigate = useNavigate();
   const location = useLocation();
 
   const [uploadedAssets, setUploadedAssets] = useState<Record<string, boolean>>({});
-  const [activeMenuIndex, setActiveMenuIndex] = useState<number | null>(0);
-  const [menuHistory, setMenuHistory] = useState<number[]>([0]);
+  const [activeMenuIndex, setActiveMenuIndex] = useState<number | null>(() => {
+    const p = window.location.pathname;
+    const usr = (window.history.state as { usr?: { menuIndex?: number } } | null)?.usr;
+    if (p === '/rings' || p === '/bands') return usr?.menuIndex !== undefined ? usr.menuIndex : 4;
+    if (p === '/type') return 1;
+    return 0;
+  });
+  const [menuHistory, setMenuHistory] = useState<number[]>(() => {
+    const p = window.location.pathname;
+    if (p === '/rings' || p === '/bands') return [0, 1, 4];
+    if (p === '/type') return [0, 1];
+    return [0];
+  });
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [headGemPickerField, setHeadGemPickerField] = useState<
     'ring_type' | 'band_type' | 'head_setting' | 'head_texture' |
     'shank_type' | 'profile' | 'shank_texture' |
-    'settings' | 'shapes' | 'directions' | null>(null);
+    'settings' | 'shapes' | 'directions' |
+    'sec_settings' | null>(null);
   const gemPickerSetterRef = useRef<((v: string[]) => void) | null>(null);
   const [typePickerQuery, setTypePickerQuery] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isSerchExpanded, setIsSerchExpanded] = useState(false);
   const [hasSearchBeenClicked, setHasSearchBeenClicked] = useState(false);
-  const [hasCustomerSearchBeenClicked, setHasCustomerSearchBeenClicked] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [isCustomerSearchFocused, setIsCustomerSearchFocused] = useState(false);
   const [isSizeFocused, setIsSizeFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchPlaceholder, setSearchPlaceholder] = useState("Search by Name or ID");
-  const [targetCategoryIndex, setTargetCategoryIndex] = useState<number>(2);
-  
-  const [activeJewelryType, setActiveJewelryType] = useState<'ring' | 'band'>('ring');
+  const [targetCategoryIndex, setTargetCategoryIndex] = useState<number>(
+    () => window.location.pathname === '/bands' ? 3 : 2
+  );
+
+  const [activeJewelryType, setActiveJewelryType] = useState<'ring' | 'band'>(
+    () => window.location.pathname === '/bands' ? 'band' : 'ring'
+  );
   const [ringStore, setRingStore] = useState<ConfigData>(initialConfig());
   const [bandStore, setBandStore] = useState<ConfigData>(initialConfig());
 
@@ -205,11 +184,11 @@ const App: React.FC = () => {
   const [selectedProfileItems, setSelectedProfileItems] = useState<string[]>([]);
   const [selectedSizeItems, setSelectedSizeItems] = useState<string[]>([]);
 
-  const [mainGemsSettings, setMainGemsSettings] = useState<string[]>([]);
-  const [mainGemsShapes, setMainGemsShapes] = useState<string[]>([]);
-  const [mainGemsDirections, setMainGemsDirections] = useState<string[]>([]);
-  const [mainGemsSize, setMainGemsSize] = useState<string>("");
-  const [mainGemsCount, setMainGemsCount] = useState<string>("");
+  const [mainGemRows, setMainGemRows] = useState<MainGemRow[]>([mkMainGem()]);
+  const [mainGemPickerRow, setMainGemPickerRow] = useState(0);
+  const [mainGemPickerField, setMainGemPickerField] = useState<'settings' | 'shapes' | 'directions' | null>(null);
+  const updateMainGemRow = (idx: number, patch: Partial<MainGemRow>) =>
+    setMainGemRows(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
 
   const [headSecSettings, setHeadSecSettings] = useState<string[]>([]);
   const [headSecShapes, setHeadSecShapes] = useState<string[]>([]);
@@ -229,6 +208,12 @@ const App: React.FC = () => {
   const updateShankGem = (idx: number, patch: Partial<ShankGemRow>) =>
     setShankGems(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
 
+  const [headSecGems, setHeadSecGems] = useState<HeadSecGemRow[]>([mkHeadSecGem()]);
+  const [headSecPickerRow, setHeadSecPickerRow] = useState(0);
+  const [headSecPickerField, setHeadSecPickerField] = useState<'settings' | 'shapes' | 'directions' | null>(null);
+  const updateHeadSecGem = (idx: number, patch: Partial<HeadSecGemRow>) =>
+    setHeadSecGems(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
+
   const [isShankSubflow, setIsShankSubflow] = useState<boolean>(false);
   // Tracks where gem sub-screens (18/12/13) return to: 9 = builder, 16 = shank inline
   const [gemBuilderHome, setGemBuilderHome] = useState<number>(9);
@@ -237,8 +222,9 @@ const App: React.FC = () => {
   const [activeDropdown, setActiveDropdown] = useState<'details-size' | null>(null);
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [focusedCustomerIndex, setFocusedCustomerIndex] = useState(-1);
-  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [customerResults, setCustomerResults] = useState<Customer[]>([]);
   const [jobName, setJobName] = useState("");
   const [jobPlaceholder, setJobPlaceholder] = useState("Job Name");
   const [sizeInputBuffer, setSizeInputBuffer] = useState<string>("");
@@ -271,13 +257,8 @@ const App: React.FC = () => {
   const topPadding = 22; 
   const bottomPadding = 22; 
   const [thumbTop, setThumbTop] = useState(topPadding);
-  const [customerThumbTop, setCustomerThumbTop] = useState(16);
-  const [customerThumbHeight, setCustomerThumbHeight] = useState(64);
-  const [isCustomerScrollbarReady, setIsCustomerScrollbarReady] = useState(false);
   const [isDraggingThumb, setIsDraggingThumb] = useState(false);
-  const [isDraggingCustomerThumb, setIsDraggingCustomerThumb] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
-  const [customerDragOffset, setCustomerDragOffset] = useState(0);
 
   const [selectedListItem, setSelectedListItem] = useState<number | null>(null);
   const [infoRing, setInfoRing] = useState<Ring | null>(null);
@@ -302,7 +283,7 @@ const App: React.FC = () => {
     0: ["Rings", "Earrings", "Bracelets", "Necklace", "Body Jewelry", "Accessories"],
     1: ["Rings", "Bands"],
     2: lookups?.ring_types.map(rt => rt.name) ?? [],
-    3: ["Wedding Bands", "Eternity Bands", "Plain Bands", "Domed Bands", "Twisted Bands", "Split Bands"],
+    3: lookups?.bands.map(b => b.name) ?? [],
     5: ["HEAD", "GEMS", "MineGem", "Texture&Details"], 
     7: lookups?.head_settings.map(s => s.name) ?? [],
     8: [],
@@ -313,7 +294,7 @@ const App: React.FC = () => {
     14: ["Classic", "Knife-Edge", "Cathedral", "Tapered", "Split", "Twisted (Infinity)", "Bypass", "Euro", "Cathedral & Tapered", "Open", "Fancy"],
     15: ["Rectangular", "Roundish", "Half-Roundish", "Arch, D-Shape", "Knife-Edge", "Knife-Arch", "Fancy", "Rectangular Comfort", "Roundish Comfort", "Half-Roundish Comfort", "Arch, D-Shape Comfort", "Knife-Edge Comfort", "Knife-Arch Comfort", "Fancy Comfort"],
     16: ["TYPE", "GEMS", "PROFILE", "Texture&Details"], 
-    18: ["Prong Setting", "Flush Setting", "French Pave", "Bezel Setting", "Channel Setting", "Pavé Setting", "Micro Pavé", "Tension Setting", "Bar Setting", "Cluster Setting", "Invisible Setting", "Burnish Setting"],
+    18: lookups?.shank_stone_settings.map(s => s.name) ?? [],
     19: lookups?.textures.map(t => t.name) ?? []
   };
 
@@ -457,11 +438,10 @@ const App: React.FC = () => {
         const settingMapRev: Record<string, string> = { "BZ": "Bezel", "HB": "Half bezel", "3P": "Three Prongs", "FP": "Four Prongs", "5P": "Five Prongs", "6P": "Six Prongs", "DP": "Double Prong", "BN": "Burnish", "PG": "Peg" };
         const shapeMapRev: Record<string, string> = { "RD": "Round", "AS": "Asscher", "CU": "Cushion", "EM": "Emerald", "MQ": "Marquise", "OV": "Oval", "PE": "Pear", "PR": "Princess", "RA": "Radiant", "SR": "Radiant Square", "SC": "Cushion Square", "HT": "Heart", "BG": "Baguette", "TB": "Tapered Baguette", "HX": "Hexagon", "KT": "Kite", "TR": "Trillion", "HM" : "Half Moon" };
         const directionMapRev: Record<string, string> = { "NS": "North-South", "SL": "Slanted", "AL": "Alternating", "EW": "Est-West", "ND": "Not-Directed" };
-        if (parts[0]) { const s = settingMapRev[parts[0]] || menuData[11].find(o => o.substring(0, 2).toUpperCase() === parts[0]); if (s) setMainGemsSettings([s]); }
-        if (parts[1]) { const s = shapeMapRev[parts[1]] || menuData[12].find(o => o.substring(0, 2).toUpperCase() === parts[1]); if (s) setMainGemsShapes([s]); }
-        if (parts[2]) { const d = directionMapRev[parts[2]] || menuData[13].find(o => o.substring(0, 1).toUpperCase() === parts[2]); if (d) setMainGemsDirections([d]); }
-        if (parts[3]) setMainGemsSize(parts[3]);
-        if (parts[4]) setMainGemsCount(parts[4]);
+        const s = parts[0] ? (settingMapRev[parts[0]] || menuData[11].find(o => o.substring(0, 2).toUpperCase() === parts[0])) : undefined;
+        const sh = parts[1] ? (shapeMapRev[parts[1]] || menuData[12].find(o => o.substring(0, 2).toUpperCase() === parts[1])) : undefined;
+        const d = parts[2] ? (directionMapRev[parts[2]] || menuData[13].find(o => o.substring(0, 1).toUpperCase() === parts[2])) : undefined;
+        setMainGemRows([{ settings: s || '', settingId: null, shapes: sh || '', directions: d || '', size: parts[3] || '', count: parts[4] || '' }]);
       }
       return true;
     }
@@ -541,16 +521,19 @@ const App: React.FC = () => {
     const settingMap: Record<string, string> = { "Bezel": "BZ", "Half bezel": "HB", "Three Prongs": "3P", "Four Prongs": "FP", "Five Prongs": "5P", "Six Prongs": "6P", "Double Prong": "DP", "Burnish": "BN", "Peg": "PG" };
     const shapeMap: Record<string, string> = { "Round": "RD", "Asscher": "AS", "Cushion": "CU", "Emerald": "EM", "Marquise": "MQ", "Oval": "OV", "Pear": "PE", "Princess": "PR", "Radiant": "RA", "Radiant Square": "SR", "Cushion Square": "SC", "Heart": "HT", "Baguette": "BG", "Tapered Baguette": "TB", "Hexagon": "HX", "Kite": "KT", "Trillion": "TR", "Half Moon" : "HM" };
     const directionMap: Record<string, string> = { "North-South": "NS", "Slanted": "SL", "Alternating": "AL", "Est-West": "EW", "Not-Directed": "ND" };
+    const r = mainGemRows[0] || mkMainGem();
+    if (!r.settings && !r.shapes && !r.directions && !r.size && !r.count) return null;
+
     const parts: string[] = ["M"]; // Always start with M_
-    
-    parts.push(mainGemsSettings[0] ? (settingMap[mainGemsSettings[0]] || mainGemsSettings[0].substring(0, 2).toUpperCase()) : "SET");
-    parts.push(mainGemsShapes[0] ? (shapeMap[mainGemsShapes[0]] || mainGemsShapes[0].substring(0, 2).toUpperCase()) : "SHP");
-    parts.push(mainGemsDirections[0] ? (directionMap[mainGemsDirections[0]] || mainGemsDirections[0].substring(0, 1).toUpperCase()) : "DIR");
-    parts.push(mainGemsSize ? mainGemsSize.toUpperCase() : "SIZ");
-    parts.push(mainGemsCount || "COU");
-    
+
+    parts.push(r.settings ? (settingMap[r.settings] || r.settings.substring(0, 2).toUpperCase()) : "SET");
+    parts.push(r.shapes ? (shapeMap[r.shapes] || r.shapes.substring(0, 2).toUpperCase()) : "SHP");
+    parts.push(r.directions ? (directionMap[r.directions] || r.directions.substring(0, 1).toUpperCase()) : "DIR");
+    parts.push(r.size ? r.size.toUpperCase() : "");
+    parts.push(r.count || "");
+
     return parts.join("_");
-  }, [mainGemsSettings, mainGemsShapes, mainGemsDirections, mainGemsCount, mainGemsSize]);
+  }, [mainGemRows]);
 
   const generateSecondaryGemsCode = useCallback((settings: string[], shapes: string[], directions: string[], size: string, count: string) => {
     const parts: string[] = [];
@@ -568,14 +551,14 @@ const App: React.FC = () => {
        parts.push("DIR");
     }
     
-    parts.push(size ? size.toUpperCase() : "SIZ");
-    parts.push(count || "COU");
+    parts.push(size ? size.toUpperCase() : "");
+    parts.push(count || "");
     
     return parts.join("_");
   }, []);
 
   const clearMainGems = useCallback(() => {
-    setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setMainGemsSize(""); setMainGemsCount("");
+    setMainGemRows([mkMainGem()]);
     setSelectedOptions(prev => { const next = { ...prev }; delete next[11]; delete next[12]; delete next[13]; return next; });
   }, []);
 
@@ -596,24 +579,17 @@ const App: React.FC = () => {
   };
 
   const handleAcceptMainGems = useCallback(() => {
-    const missing = getMissingSections(mainGemsSettings, mainGemsShapes, mainGemsDirections, mainGemsSize, mainGemsCount);
-    
     const proceed = () => {
       const code = generateMainGemsCode();
-      if (!code) return;
-      if (editingItemCode) { setSelectedHeadItems(prev => prev.map(item => item === editingItemCode ? code : item)); setEditingItemCode(null); } 
-      else { setSelectedHeadItems(prev => Array.from(new Set([...prev, code, "MineGem"]))); }
-      clearMainGems(); navigateTo(4);
+      if (code) {
+        if (editingItemCode) { setSelectedHeadItems(prev => prev.map(item => item === editingItemCode ? code : item)); setEditingItemCode(null); }
+        else { setSelectedHeadItems(prev => Array.from(new Set([...prev, code, "MineGem"]))); }
+      }
+      navigateTo(4);
     };
 
-    if (missing.length > 0 && !isSkipChecked) {
-      setMissingSections(missing);
-      setOnSkipConfirm(() => proceed);
-      setShowSkipWarning(true);
-    } else {
-      proceed();
-    }
-  }, [mainGemsSettings, mainGemsShapes, mainGemsDirections, mainGemsSize, mainGemsCount, generateMainGemsCode, clearMainGems, editingItemCode, isSkipChecked]);
+    proceed();
+  }, [mainGemRows, generateMainGemsCode, clearMainGems, editingItemCode, isSkipChecked]);
 
   const handleAcceptSecondaryGems = useCallback(() => {
     const settings = isShankSubflow ? shankSecSettings : headSecSettings;
@@ -622,33 +598,25 @@ const App: React.FC = () => {
     const size = isShankSubflow ? shankSecSize : headSecSize;
     const count = isShankSubflow ? shankSecCount : headSecCount;
 
-    const missing = getMissingSections(settings, shapes, directions, size, count);
-
     const proceed = () => {
       if (isShankSubflow) {
         const code = generateSecondaryGemsCode(shankSecSettings, shankSecShapes, shankSecDirections, shankSecSize, shankSecCount);
         if (!code) return;
         const finalCode = "SEC_" + code;
-        if (editingItemCode) { setSelectedShankItems(prev => prev.map(item => item === editingItemCode ? finalCode : item)); setEditingItemCode(null); } 
+        if (editingItemCode) { setSelectedShankItems(prev => prev.map(item => item === editingItemCode ? finalCode : item)); setEditingItemCode(null); }
         else { setSelectedShankItems(prev => Array.from(new Set([...prev, finalCode, "GEMS"]))); }
         clearSecondaryGems('shank'); navigateTo(4);
       } else {
         const code = generateSecondaryGemsCode(headSecSettings, headSecShapes, headSecDirections, headSecSize, headSecCount);
         if (!code) return;
         const finalCode = "SEC_" + code;
-        if (editingItemCode) { setSelectedHeadItems(prev => prev.map(item => item === editingItemCode ? finalCode : item)); setEditingItemCode(null); } 
+        if (editingItemCode) { setSelectedHeadItems(prev => prev.map(item => item === editingItemCode ? finalCode : item)); setEditingItemCode(null); }
         else { setSelectedHeadItems(prev => Array.from(new Set([...prev, finalCode, "GEMS"]))); }
         clearSecondaryGems('head'); navigateTo(4);
       }
     };
 
-    if (missing.length > 0 && !isSkipChecked) {
-      setMissingSections(missing);
-      setOnSkipConfirm(() => proceed);
-      setShowSkipWarning(true);
-    } else {
-      proceed();
-    }
+    proceed();
   }, [isShankSubflow, generateSecondaryGemsCode, shankSecSettings, shankSecShapes, shankSecDirections, shankSecSize, shankSecCount, headSecSettings, headSecShapes, headSecDirections, headSecSize, headSecCount, clearSecondaryGems, editingItemCode, isSkipChecked]);
 
   const handleUndo = useCallback(() => {
@@ -664,17 +632,18 @@ const App: React.FC = () => {
   }, [redoStack, selectedOptions]);
 
   const saveCurrentToStore = useCallback(() => {
-    const currentSnapshot: ConfigData = { selectedOptions, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems, selectedSizeItems, mainGemsSettings, mainGemsShapes, mainGemsDirections, mainGemsSize, mainGemsCount, headSecSettings, headSecShapes, headSecDirections, headSecSize, headSecCount, shankSecSettings, shankSecShapes, shankSecDirections, shankSecSize, shankSecCount, sizeInputBuffer, history, redoStack };
+    const currentSnapshot: ConfigData = { selectedOptions, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems, selectedSizeItems, mainGemRows, headSecSettings, headSecShapes, headSecDirections, headSecSize, headSecCount, shankSecSettings, shankSecShapes, shankSecDirections, shankSecSize, shankSecCount, sizeInputBuffer, history, redoStack };
     if (activeJewelryType === 'ring') { setRingStore(currentSnapshot); } else { setBandStore(currentSnapshot); }
-  }, [activeJewelryType, selectedOptions, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems, selectedSizeItems, mainGemsSettings, mainGemsShapes, mainGemsDirections, mainGemsSize, mainGemsCount, headSecSettings, headSecShapes, headSecDirections, headSecSize, headSecCount, shankSecSettings, shankSecShapes, shankSecDirections, shankSecSize, shankSecCount, sizeInputBuffer, history, redoStack]);
+  }, [activeJewelryType, selectedOptions, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems, selectedSizeItems, mainGemRows, headSecSettings, headSecShapes, headSecDirections, headSecSize, headSecCount, shankSecSettings, shankSecShapes, shankSecDirections, shankSecSize, shankSecCount, sizeInputBuffer, history, redoStack]);
 
   const loadFromStore = (type: 'ring' | 'band') => {
     const data = type === 'ring' ? ringStore : bandStore;
-    setSelectedOptions(data.selectedOptions); setSelectedDetailItems(data.selectedDetailItems); setSelectedHeadItems(data.selectedHeadItems); setSelectedShankItems(data.selectedShankItems); setSelectedProfileItems(data.selectedProfileItems); setSelectedSizeItems(data.selectedSizeItems); setMainGemsSettings(data.mainGemsSettings); setMainGemsShapes(data.mainGemsShapes); setMainGemsDirections(data.mainGemsDirections); setMainGemsSize(data.mainGemsSize); setMainGemsCount(data.mainGemsCount || ""); setHeadSecSettings(data.headSecSettings); setHeadSecShapes(data.headSecShapes); setHeadSecDirections(data.headSecDirections); setHeadSecSize(data.headSecSize); setHeadSecCount(data.headSecCount || ""); setShankSecSettings(data.shankSecSettings); setShankSecShapes(data.shankSecShapes); setShankSecDirections(data.shankSecDirections); setShankSecSize(data.shankSecSize); setShankSecCount(data.shankSecCount || ""); setSizeInputBuffer(data.sizeInputBuffer); setHistory(data.history); setRedoStack(data.redoStack);
+    setSelectedOptions(data.selectedOptions); setSelectedDetailItems(data.selectedDetailItems); setSelectedHeadItems(data.selectedHeadItems); setSelectedShankItems(data.selectedShankItems); setSelectedProfileItems(data.selectedProfileItems); setSelectedSizeItems(data.selectedSizeItems); setMainGemRows(data.mainGemRows || [mkMainGem()]); setHeadSecSettings(data.headSecSettings); setHeadSecShapes(data.headSecShapes); setHeadSecDirections(data.headSecDirections); setHeadSecSize(data.headSecSize); setHeadSecCount(data.headSecCount || ""); setShankSecSettings(data.shankSecSettings); setShankSecShapes(data.shankSecShapes); setShankSecDirections(data.shankSecDirections); setShankSecSize(data.shankSecSize); setShankSecCount(data.shankSecCount || ""); setSizeInputBuffer(data.sizeInputBuffer); setHistory(data.history); setRedoStack(data.redoStack);
   };
 
   const resetAll = useCallback(() => {
-    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsSerchExpanded(false); setHasSearchBeenClicked(false); setHasCustomerSearchBeenClicked(false); setSearchQuery(""); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemsSize(""); setMainGemsCount(""); setMainGemsSettings([]); setMainGemsShapes([]); setMainGemsDirections([]); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setShankGems([mkShankGem()]); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(null); setEditingItemCode(null); setIsSkipChecked(false); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(DEFAULT_PRODUCT_IMAGE); setRingImages([]); setRingStl(null); setActivePreviewTab('IMAGE'); setUploadedAssets({}); setFile3dm(null); setFileStl(null); setFileMedia([]); setUploadStatus('idle'); setUploadError(null);
+    setSelectedOptions({}); setHistory([]); setRedoStack([]); setActiveMenuIndex(0); setMenuHistory([0]); setIsSaveModalOpen(false); setIsDarkMode(true); setIsSerchExpanded(false); setHasSearchBeenClicked(false); setSearchQuery(""); setSelectedDetailItems([]); setSelectedHeadItems([]); setSelectedShankItems([]); setSelectedProfileItems([]); setSelectedSizeItems([]); setMainGemRows([mkMainGem()]); setMainGemPickerField(null); setHeadSecSettings([]); setHeadSecShapes([]); setHeadSecDirections([]); setHeadSecSize(""); setHeadSecCount(""); setShankSecSettings([]); setShankSecShapes([]); setShankSecDirections([]); setShankSecSize(""); setShankSecCount(""); setShankGems([mkShankGem()]); setHeadSecGems([mkHeadSecGem()]); setSizeInputBuffer(""); setActiveDropdown(null); setShowSuffixMenu(false); setIsShankSubflow(false); setGemBuilderType('main'); setIsInteractiveMode(null); setEditingItemCode(null); setIsSkipChecked(false); setRingStore(initialConfig()); setBandStore(initialConfig()); setActiveJewelryType('ring'); setShowSummaryOverlay(false); setOverlayPage(0); setIsFullScreenImage(false); setSelectedListItem(null); setSelectedImage(DEFAULT_PRODUCT_IMAGE); setRingImages([]); setRingStl(null); setActivePreviewTab('IMAGE'); setUploadedAssets({}); setFile3dm(null); setFileStl(null); setFileMedia([]); setUploadStatus('idle'); setUploadError(null);
+    setSelectedCustomer(null); setCustomerSearchQuery(""); setCustomerResults([]); setJobName(""); setHeadGemPickerField(null); setShankPickerField(null); setHeadSecPickerField(null); setIsCustomerDropdownOpen(false);
   }, []);
 
   // ── Backend upload handler (must be after resetAll) ───────────────────────
@@ -712,14 +681,16 @@ const App: React.FC = () => {
         stone_size:  parts[3] || '',
         stone_count: parseInt(parts[4]) || 1,
       }];
-    } else if (mainGemsSettings.length > 0) {
-      headGems = [{
-        head_stone_setting_id: matchIds(mainGemsSettings, lookups.head_stone_settings)[0] ?? null,
-        stone_shape_id:        matchIds(mainGemsShapes,   lookups.stone_shapes)[0]          ?? null,
-        directions_id:         matchIds(mainGemsDirections, lookups.directions)[0]           ?? null,
-        stone_size:  mainGemsSize,
-        stone_count: parseInt(mainGemsCount) || 1,
-      }];
+    } else if (mainGemRows.some(r => r.settings || r.shapes || r.directions || r.size || r.count)) {
+      headGems = mainGemRows
+        .filter(r => r.settings || r.shapes || r.directions)
+        .map(r => ({
+          head_stone_setting_id: r.settingId ?? matchIds([r.settings], lookups.head_stone_settings)[0] ?? null,
+          stone_shape_id:        matchIds([r.shapes],     lookups.stone_shapes)[0]  ?? null,
+          directions_id:         matchIds([r.directions], lookups.directions)[0]    ?? null,
+          stone_size:  r.size,
+          stone_count: parseInt(r.count, 10) || 1,
+        }));
     }
 
     const shankGemsPayload = shankGems.map(r => ({
@@ -742,11 +713,23 @@ const App: React.FC = () => {
     matchIds(selectedHeadItems.filter(i => menuData[19].includes(i)), lookups.textures).forEach(id => fd.append('head_textures_ids', String(id)));
     matchIds(selectedShankItems.filter(i => menuData[19].includes(i)), lookups.textures).forEach(id => fd.append('shank_textures_ids', String(id)));
     if (activeJewelryType === 'band') {
-      matchIds(selectedOptions[3] || [], lookups.bands).forEach(id => fd.append('bands_ids', String(id)));
+      matchIds(ringTypeNames, lookups.bands).forEach(id => fd.append('bands_ids', String(id)));
     }
+    if (selectedCustomer) fd.append('customer_id', String(selectedCustomer.id));
+    const headSecGemsPayload = headSecGems
+      .filter(r => r.settingId || r.shapes || r.directions)
+      .map(r => ({
+        shank_stone_setting_id: r.settingId,
+        second_stone_shape_id:  matchIds([r.shapes],     lookups.stone_shapes)[0]  ?? null,
+        second_directions_id:   matchIds([r.directions], lookups.directions)[0]    ?? null,
+        second_stone_size:  r.size,
+        second_stone_count: parseInt(r.count, 10) || 1,
+      }));
+
     fd.append('head_gems_json', JSON.stringify(headGems));
     fd.append('shank_gems_json', JSON.stringify(shankGemsPayload));
     fd.append('band_gems_json', '[]');
+    fd.append('head_second_gems_json', JSON.stringify(headSecGemsPayload));
 
     setUploadStatus('uploading');
     setUploadError(null);
@@ -761,7 +744,8 @@ const App: React.FC = () => {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     }
   }, [lookups, file3dm, fileStl, fileMedia, selectedSizeItems, activeJewelryType, selectedOptions,
-      selectedDetailItems, mainGemsSettings, mainGemsShapes, mainGemsDirections, mainGemsSize, mainGemsCount,
+      selectedDetailItems, mainGemRows,
+      headSecGems,
       shankGems,
       selectedProfileItems, selectedHeadItems, selectedShankItems, resetAll]);
   // ─────────────────────────────────────────────────────────────────────────
@@ -769,6 +753,8 @@ const App: React.FC = () => {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
   };
+
+  const isVideoUrl = (url: string) => /\.(mp4|mov|avi|webm|mkv)$/i.test(url);
 
   const highlightMatch = (text: string, query: string, prefixOnly = false) => {
     if (!query) return text;
@@ -804,51 +790,15 @@ const App: React.FC = () => {
     }).map(r => r.id);
   }, [searchQuery, rings]);
 
-  const filteredCustomers = useMemo(() => {
-    return [...CUSTOMER_NAMES].sort((a, b) => a.localeCompare(b)).filter(name => 
-      name.toLowerCase().startsWith(customerSearchQuery.toLowerCase())
-    );
-  }, [customerSearchQuery]);
+  useEffect(() => {
+    if (!isCustomerDropdownOpen) return;
+    fetchCustomers(customerSearchQuery).then(setCustomerResults).catch(() => {});
+  }, [isCustomerDropdownOpen, customerSearchQuery]);
 
   const handleNumericCountChange = (val: string, setter: (v: string) => void) => {
     const numericVal = val.replace(/[^0-9]/g, ''); if (numericVal === "") { setter(""); return; } const num = parseInt(numericVal); if (num <= 500) setter(numericVal);
   };
 
-  // High precision high resolution scroll update with custom asymmetric gaps
-  const syncCustomerScrollbar = useCallback((forceReady = false) => {
-    if (customerListRef.current && customerTrackRef.current) {
-      const list = customerListRef.current;
-      const track = customerTrackRef.current;
-      const { scrollTop, scrollHeight, clientHeight } = list;
-      const trackHeight = track.getBoundingClientRect().height;
-      
-      if (trackHeight <= 32 || clientHeight === 0 || scrollHeight === 0) return;
-
-      const newThumbHeight = Math.max(40, Math.min(trackHeight - 32, (clientHeight / scrollHeight) * (trackHeight - 32)));
-      setCustomerThumbHeight(newThumbHeight);
-      
-      const scrollableHeight = scrollHeight - clientHeight;
-      const availableTrack = trackHeight - 16 - 16 - newThumbHeight;
-      
-      if (scrollableHeight > 0) {
-        const scrollPercent = scrollTop / scrollableHeight;
-        setCustomerThumbTop(16 + (scrollPercent * Math.max(0, availableTrack)));
-      } else {
-        setCustomerThumbTop(16);
-      }
-      
-      // Only show scrollbar if there is actual content to scroll
-      if (forceReady) {
-        setIsCustomerScrollbarReady(scrollableHeight > 0);
-      }
-    }
-  }, []);
-
-  const handleCustomerScroll = useCallback(() => {
-    if (!isDraggingCustomerThumb) {
-      syncCustomerScrollbar(true);
-    }
-  }, [isDraggingCustomerThumb, syncCustomerScrollbar]);
 
   // Restore user session on mount
   useEffect(() => {
@@ -856,61 +806,11 @@ const App: React.FC = () => {
     me().then(data => setUserEmail(data.email)).catch(() => clearAuthToken());
   }, []);
 
-  // Sync customer scrollbar when content or dropdown state changes
   useEffect(() => {
-    if (isCustomerDropdownOpen) {
-      setFocusedCustomerIndex(0);
-    } else {
+    if (!isCustomerDropdownOpen) {
       setFocusedCustomerIndex(-1);
     }
-  }, [isCustomerDropdownOpen, customerSearchQuery]);
-
-  useLayoutEffect(() => {
-    if (isCustomerDropdownOpen) {
-      // Prepare values silently first
-      syncCustomerScrollbar(false);
-      
-      // Delay showing to ensure layout is stable and prevent flickering/jumping
-      const timer = setTimeout(() => {
-        syncCustomerScrollbar(true);
-      }, 64);
-      
-      return () => clearTimeout(timer);
-    } else {
-      setIsCustomerScrollbarReady(false);
-    }
-  }, [isCustomerDropdownOpen, filteredCustomers, syncCustomerScrollbar]);
-
-  const handleCustomerThumbMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    if (!customerTrackRef.current) return;
-    
-    const trackRect = customerTrackRef.current.getBoundingClientRect();
-    const currentThumbTop = customerThumbTop;
-    const clickY = e.clientY - trackRect.top;
-    
-    setCustomerDragOffset(clickY - currentThumbTop);
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingCustomerThumb(true);
-  }, [customerThumbTop]);
-
-  const handleCustomerTrackMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!customerTrackRef.current || !customerListRef.current) return;
-    const trackRect = customerTrackRef.current.getBoundingClientRect();
-    const clickY = e.clientY - trackRect.top;
-    const availableTrack = trackRect.height - 16 - 16 - customerThumbHeight;
-    
-    if (availableTrack <= 0) return;
-
-    let targetThumbTop = clickY - (customerThumbHeight / 2);
-    const constrainedY = Math.max(16, Math.min(targetThumbTop, availableTrack + 16));
-    const scrollPercent = (constrainedY - 16) / availableTrack;
-    
-    const scrollableHeight = customerListRef.current.scrollHeight - customerListRef.current.clientHeight;
-    customerListRef.current.scrollTop = scrollPercent * scrollableHeight;
-    setCustomerThumbTop(constrainedY);
-  }, [customerThumbHeight]);
+  }, [isCustomerDropdownOpen]);
 
   const handleScroll = useCallback(() => {
     if (scrollListRef.current && scrollTrackRef.current && !isDraggingThumb) {
@@ -1104,51 +1004,6 @@ const App: React.FC = () => {
     };
   }, [isDraggingThumb, thumbHeight, topPadding, bottomPadding, dragOffset]);
 
-  useEffect(() => {
-    if (!isDraggingCustomerThumb) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (customerTrackRef.current && customerListRef.current) {
-        const trackRect = customerTrackRef.current.getBoundingClientRect();
-        const availableTrack = trackRect.height - 16 - 16 - customerThumbHeight;
-        
-        if (availableTrack <= 0) return;
-
-        let targetThumbTop = e.clientY - trackRect.top - customerDragOffset;
-        const constrainedY = Math.max(16, Math.min(targetThumbTop, availableTrack + 16));
-        const scrollPercent = (constrainedY - 16) / availableTrack;
-        
-        const { scrollHeight, clientHeight } = customerListRef.current;
-        const maxScroll = scrollHeight - clientHeight;
-        
-        if (maxScroll > 0) {
-          customerListRef.current.scrollTop = scrollPercent * maxScroll;
-        }
-        
-        setCustomerThumbTop(constrainedY);
-      }
-    };
-
-    const handleMouseUp = () => setIsDraggingCustomerThumb(false);
-    const preventDefault = (e: Event) => e.preventDefault();
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('mouseleave', handleMouseUp);
-    document.addEventListener('dragstart', preventDefault);
-    
-    document.body.style.cursor = 'grabbing';
-    document.body.style.userSelect = 'none';
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('mouseleave', handleMouseUp);
-      document.removeEventListener('dragstart', preventDefault);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isDraggingCustomerThumb, customerDragOffset, customerThumbHeight]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1171,18 +1026,19 @@ const App: React.FC = () => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); handleUndo(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); }
       if (e.key.toLowerCase() === 'd' && !isInputFocused) { e.preventDefault(); setIsDarkMode(prev => !prev); }
-      if (e.key === 'Enter') { 
-        if (isCustomerDropdownOpen && focusedCustomerIndex !== -1 && filteredCustomers[focusedCustomerIndex]) {
+      if (e.key === 'Enter') {
+        if (isCustomerDropdownOpen && focusedCustomerIndex !== -1 && customerResults[focusedCustomerIndex]) {
           e.preventDefault();
-          setSelectedCustomer(filteredCustomers[focusedCustomerIndex]);
+          const c = customerResults[focusedCustomerIndex];
+          setSelectedCustomer(c);
+          setCustomerSearchQuery(c.name);
           setIsCustomerDropdownOpen(false);
-          setCustomerSearchQuery("");
           return;
         }
-        if (activeMenuIndex === 6) { e.preventDefault(); handleAcceptMainGems(); } 
-        else if (activeMenuIndex === 9) { e.preventDefault(); handleAcceptSecondaryGems(); } 
+        if (activeMenuIndex === 6) { e.preventDefault(); handleAcceptMainGems(); }
+        else if (activeMenuIndex === 9) { e.preventDefault(); handleAcceptSecondaryGems(); }
       }
-      
+
       if (isCustomerDropdownOpen) {
         if (e.key === 'ArrowUp') {
           e.preventDefault();
@@ -1191,7 +1047,12 @@ const App: React.FC = () => {
         }
         if (e.key === 'ArrowDown') {
           e.preventDefault();
-          setFocusedCustomerIndex(prev => prev < filteredCustomers.length - 1 ? prev + 1 : prev);
+          setFocusedCustomerIndex(prev => prev < customerResults.length - 1 ? prev + 1 : prev);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setIsCustomerDropdownOpen(false);
           return;
         }
       }
@@ -1210,19 +1071,16 @@ const App: React.FC = () => {
       if (showSuffixMenu && !detailsDropdownRef.current?.contains(event.target as Node)) setShowSuffixMenu(false);
       if (customerDropdownRef.current && !customerDropdownRef.current.contains(event.target as Node)) {
         setIsCustomerDropdownOpen(false);
-        setCustomerSearchQuery("");
       }
     };
     window.addEventListener('keydown', handleKeyDown); window.addEventListener('mousedown', handleClickOutside);
     return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('mousedown', handleClickOutside); };
-  }, [handleUndo, handleRedo, isSaveModalOpen, isResetModalOpen, resetAll, activeDropdown, showSuffixMenu, activeMenuIndex, handleAcceptMainGems, handleAcceptSecondaryGems, showSummaryOverlay, isFullScreenImage, handlePrevListItem, handleNextListItem, overlayPage, isCustomerDropdownOpen, focusedCustomerIndex, filteredCustomers]);
+  }, [handleUndo, handleRedo, isSaveModalOpen, isResetModalOpen, resetAll, activeDropdown, showSuffixMenu, activeMenuIndex, handleAcceptMainGems, handleAcceptSecondaryGems, showSummaryOverlay, isFullScreenImage, handlePrevListItem, handleNextListItem, overlayPage, isCustomerDropdownOpen, focusedCustomerIndex, customerResults]);
 
   useEffect(() => {
     if (isCustomerDropdownOpen && focusedCustomerIndex !== -1 && customerListRef.current) {
-      const focusedElement = customerListRef.current.querySelector(`[data-customer-index="${focusedCustomerIndex}"]`);
-      if (focusedElement) {
-        focusedElement.scrollIntoView({ block: 'nearest' });
-      }
+      const el = customerListRef.current.querySelector(`[data-customer-index="${focusedCustomerIndex}"]`);
+      if (el) el.scrollIntoView({ block: 'nearest' });
     }
   }, [focusedCustomerIndex, isCustomerDropdownOpen]);
 
@@ -1266,7 +1124,19 @@ const App: React.FC = () => {
     if (!isInternalStep) {
       setMenuHistory(prev => (prev.length === e.history.length && prev.every((v, i) => v === e.history[i])) ? prev : e.history);
       if (e.target !== undefined) setTargetCategoryIndex(prev => prev === e.target ? prev : e.target!);
-      if (e.type   !== undefined) setActiveJewelryType  (prev => prev === e.type   ? prev : e.type!);
+      if (e.type !== undefined) {
+        setActiveJewelryType(prev => prev === e.type ? prev : e.type!);
+        // Clear preview state atomically (same render) when the jewelry type
+        // actually changes, so no stale RING preview flashes in the BAND view.
+        if (prevJewelryTypeRef.current !== e.type) {
+          prevJewelryTypeRef.current = e.type!;
+          setRings([]);
+          setSelectedListItem(null);
+          setSelectedImage(null);
+          setRingImages([]);
+          setRingStl(null);
+        }
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.state]);
@@ -1302,13 +1172,6 @@ const App: React.FC = () => {
   }, [lookups, activeJewelryType, selectedDetailItems, selectedHeadItems, selectedShankItems, selectedProfileItems, activeMagnifiers]);
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Clear selection when jewelry type switches
-  useEffect(() => {
-    setSelectedListItem(null);
-    setSelectedImage(null);
-    setRingImages([]);
-    setRingStl(null);
-  }, [activeJewelryType]);
 
   // Auto-select first ring when list loads or becomes valid (mirrors old frontend)
   useEffect(() => {
@@ -1364,9 +1227,9 @@ const App: React.FC = () => {
       setSelectedOptions(prev => { const next = { ...prev }; if (next[categoryIndex]) { next[categoryIndex] = next[categoryIndex].map(item => item === editingItemCode ? option : item); } return next; }); setEditingItemCode(null); navigateTo(4); return;
     }
     setHistory(prev => [...prev, selectedOptions]); setRedoStack([]);
-    if (categoryIndex === 11 && !isRemoval) { gemBuilderType === 'main' ? setMainGemsSettings([option]) : (isShankSubflow ? setShankSecSettings([option]) : setHeadSecSettings([option])); navigateTo(gemBuilderType === 'main' ? 5 : gemBuilderHome); }
-    else if (categoryIndex === 12 && !isRemoval) { gemBuilderType === 'main' ? setMainGemsShapes([option]) : (isShankSubflow ? setShankSecShapes([option]) : setHeadSecShapes([option])); navigateTo(gemBuilderType === 'main' ? 5 : gemBuilderHome); }
-    else if (categoryIndex === 13 && !isRemoval) { gemBuilderType === 'main' ? setMainGemsDirections([option]) : (isShankSubflow ? setShankSecDirections([option]) : setHeadSecDirections([option])); navigateTo(gemBuilderType === 'main' ? 5 : gemBuilderHome); }
+    if (categoryIndex === 11 && !isRemoval) { gemBuilderType === 'main' ? updateMainGemRow(0, { settings: option, settingId: null }) : (isShankSubflow ? setShankSecSettings([option]) : setHeadSecSettings([option])); navigateTo(gemBuilderType === 'main' ? 5 : gemBuilderHome); }
+    else if (categoryIndex === 12 && !isRemoval) { gemBuilderType === 'main' ? updateMainGemRow(0, { shapes: option }) : (isShankSubflow ? setShankSecShapes([option]) : setHeadSecShapes([option])); navigateTo(gemBuilderType === 'main' ? 5 : gemBuilderHome); }
+    else if (categoryIndex === 13 && !isRemoval) { gemBuilderType === 'main' ? updateMainGemRow(0, { directions: option }) : (isShankSubflow ? setShankSecDirections([option]) : setHeadSecDirections([option])); navigateTo(gemBuilderType === 'main' ? 5 : gemBuilderHome); }
     else if (categoryIndex === 18 && !isRemoval) { isShankSubflow ? setShankSecSettings([option]) : setHeadSecSettings([option]); navigateTo(gemBuilderHome); }
     else if (categoryIndex === 14 && !isRemoval) { setSelectedShankItems(prev => prev.includes(option) ? prev : [...prev, option]); navigateTo(4); }
     else if (categoryIndex === 15 && !isRemoval) { setSelectedProfileItems(prev => prev.includes(option) ? prev : [...prev, option]); navigateTo(4); }
@@ -1393,9 +1256,9 @@ const App: React.FC = () => {
         }
         if (categoryIndex === 14) setSelectedShankItems(s => s.filter(item => item !== option));
         if (categoryIndex === 15) setSelectedProfileItems(p => p.filter(item => item !== option));
-        if (categoryIndex === 11) { setMainGemsSettings([]); setHeadSecSettings([]); setShankSecSettings([]); }
-        if (categoryIndex === 12) { setMainGemsShapes([]); setHeadSecShapes([]); setShankSecShapes([]); }
-        if (categoryIndex === 13) { setMainGemsDirections([]); setHeadSecDirections([]); setShankSecDirections([]); }
+        if (categoryIndex === 11) { updateMainGemRow(0, { settings: '', settingId: null }); setHeadSecSettings([]); setShankSecSettings([]); }
+        if (categoryIndex === 12) { updateMainGemRow(0, { shapes: '' }); setHeadSecShapes([]); setShankSecShapes([]); }
+        if (categoryIndex === 13) { updateMainGemRow(0, { directions: '' }); setHeadSecDirections([]); setShankSecDirections([]); }
         if (categoryIndex === 18) { setHeadSecSettings([]); setShankSecSettings([]); }
       } else { if (!exists) newSelectedOptions[categoryIndex] = [...current, option]; } return newSelectedOptions;
     });
@@ -1518,7 +1381,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex flex-col items-center">
             <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SIZE</span>
-            <div className="flex flex-col items-center h-6 mb-1" />
+            <div className="h-6 mb-1" />
             <div className={`w-72 h-14 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
               <input 
                 type="text" 
@@ -1531,7 +1394,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex flex-col items-center">
             <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>COUNT</span>
-            <div className="flex flex-col items-center h-6 mb-1" />
+            <div className="h-6 mb-1" />
             <div className={`w-72 h-14 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
               <input 
                 type="text" 
@@ -1585,7 +1448,7 @@ const App: React.FC = () => {
     if (currentIdx === 4) {
       const _selectedRing = (showSummaryOverlay && selectedListItem) ? ringsMap[selectedListItem] : null;
       const currentDbItem = _selectedRing ? {
-        type:    _selectedRing.ring_type_names,
+        type:    isBand ? _selectedRing.band_names : _selectedRing.ring_type_names,
         head:    _selectedRing.head_setting_names,
         shank:   _selectedRing.shank_type_names,
         profile: _selectedRing.profile_names,
@@ -1597,128 +1460,79 @@ const App: React.FC = () => {
           <h2 className={`text-2xl font-black tracking-[0.15em] text-center uppercase mb-4 -mt-2 ${isDarkMode ? 'text-white' : 'text-black'}`}>{isBand ? 'Band' : 'Ring'}</h2>
           
           <div className="flex justify-start items-center gap-8 mb-10 w-[1346px] mx-auto">
+            {userEmail && <>
             <div className="relative w-72" ref={customerDropdownRef}>
               <div className={`w-full h-14 flex items-center justify-center border rounded-full ${
                 isDarkMode ? 'bg-[#121c2e] border-[#1e293b]' : 'bg-[#f8fafc] border-[#e2e8f0]'
               } shadow-inner`}>
-                <div 
-                  onClick={() => setIsCustomerDropdownOpen(!isCustomerDropdownOpen)}
-                  className={`w-[calc(100%-4px)] h-[calc(100%-4px)] flex items-center justify-center px-6 transition-all duration-300 border rounded-full relative cursor-pointer ${
-                    selectedCustomer 
-                      ? 'border-[#00c4a7] shadow-[0_0_12px_rgba(0,196,167,0.5)]' 
-                      : 'border-[#ef4444] shadow-[0_0_12px_rgba(239,68,68,0.5)]'
-                  } ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'} font-bold ${selectedCustomer ? 'text-[#00c4a7]' : 'text-[#ef4444]'}`}
-                >
-                  <span className="text-[24px] leading-none truncate">
-                    {selectedCustomer || "Select Customer"}
-                  </span>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setIsCustomerDropdownOpen(!isCustomerDropdownOpen); }}
-                    className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex items-center justify-center"
-                  >
-                    <ChevronDown size={24} strokeWidth={3} className={`transition-transform duration-200 ${isCustomerDropdownOpen ? 'rotate-180' : ''} ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                  </button>
+                <div className={`w-[calc(100%-4px)] h-[calc(100%-4px)] flex items-center px-5 transition-all duration-300 border rounded-full ${
+                  selectedCustomer
+                    ? 'border-[#00c4a7] shadow-[0_0_12px_rgba(0,196,167,0.5)]'
+                    : 'border-[#ef4444] shadow-[0_0_12px_rgba(239,68,68,0.5)]'
+                } ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
+                  <input
+                    ref={customerInputRef}
+                    type="text"
+                    value={customerSearchQuery}
+                    onChange={(e) => {
+                      setCustomerSearchQuery(e.target.value);
+                      setSelectedCustomer(null);
+                      setIsCustomerDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsCustomerDropdownOpen(true)}
+                    placeholder="Select Customer"
+                    className={`flex-1 min-w-0 bg-transparent text-[22px] font-bold text-center outline-none truncate ${
+                      selectedCustomer ? 'text-[#00c4a7]' : 'text-[#ef4444]'
+                    } placeholder:text-[#ef4444]`}
+                  />
+                  {customerSearchQuery.trim() && !customerResults.some(c => c.name.toLowerCase() === customerSearchQuery.trim().toLowerCase()) && (
+                    <button
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={async () => {
+                        try {
+                          const created = await createCustomer(customerSearchQuery.trim());
+                          setSelectedCustomer(created);
+                          setCustomerSearchQuery(created.name);
+                          setIsCustomerDropdownOpen(false);
+                        } catch {}
+                      }}
+                      className="shrink-0 ml-2 px-3 py-1 text-sm font-bold rounded-full bg-[#00c4a7] text-white hover:bg-[#00a892] transition-colors"
+                    >
+                      Add
+                    </button>
+                  )}
                 </div>
               </div>
               {isCustomerDropdownOpen && (
-                <div className={`absolute top-full mt-6 left-0 right-0 z-[9999] shadow-2xl flex flex-col ${
-                  isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'
+                <div className={`absolute top-full mt-2 left-0 right-0 z-[9999] shadow-2xl rounded-lg overflow-hidden ${
+                  isDarkMode ? 'bg-[#121c2e]' : 'bg-white'
                 }`}>
-                  <div className="flex h-[480px]">
-                    <div 
-                      ref={customerListRef} 
-                      onScroll={handleCustomerScroll} 
-                      onMouseMove={() => { if (focusedCustomerIndex !== -1) setFocusedCustomerIndex(-1); }}
-                      className={`flex-1 overflow-y-auto hide-scrollbar ${isDarkMode ? 'bg-[#121c2e]' : 'bg-white'}`}
-                    >
-                      {filteredCustomers.map((name, index) => (
-                        <div 
-                          key={name} 
-                          data-customer-index={index}
-                          onClick={() => { setSelectedCustomer(name); setIsCustomerDropdownOpen(false); setCustomerSearchQuery(""); }}
-                          className={`px-4 py-2 text-lg font-bold cursor-pointer ${
-                            focusedCustomerIndex === index 
-                              ? (isDarkMode ? 'bg-[#1f2937] text-white' : 'bg-[#f1f5f9] text-black')
-                              : (isDarkMode ? 'text-white hover:bg-[#1f2937]' : 'text-black hover:bg-[#f1f5f9]')
-                          }`}
-                        >
-                          {highlightMatch(name, customerSearchQuery, true)}
-                        </div>
-                      ))}
-                      {filteredCustomers.length === 0 && (
-                        <div className={`px-4 py-2 text-sm italic ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>No customers found</div>
-                      )}
-                    </div>
-                    <div 
-                      ref={customerTrackRef} 
-                      onMouseDown={handleCustomerTrackMouseDown}
-                      className={`w-6 flex flex-col items-center shrink-0 ${isDarkMode ? 'bg-[#0b0f19]' : 'bg-[#f1f5f9]'} relative cursor-pointer`}
-                    >
-                      <button 
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); if (customerListRef.current) customerListRef.current.scrollBy({ top: -40, behavior: 'smooth' }); }}
-                        className={`absolute top-0.5 z-20 hover:opacity-70 transition-opacity ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}
-                      >
-                        <ChevronUp size={18} strokeWidth={3} />
-                      </button>
-
-                      <div 
-                        onMouseDown={handleCustomerThumbMouseDown} 
-                        style={{ 
-                          top: `${customerThumbTop}px`, 
-                          height: `${customerThumbHeight}px`,
-                          position: 'absolute',
-                          transition: (isDraggingCustomerThumb || !isCustomerScrollbarReady) ? 'none' : 'top 0.2s ease-out',
-                          opacity: isCustomerScrollbarReady ? 1 : 0
-                        }} 
-                        className={`w-3.5 rounded-full transform z-10 transition-opacity duration-200 ${
-                          isDraggingCustomerThumb 
-                            ? 'bg-[#00c4a7] scale-x-110 shadow-[0_0_10px_rgba(0,196,167,0.4)]' 
-                            : (isDarkMode ? 'bg-gray-600 hover:bg-[#00c4a7] hover:scale-x-110' : 'bg-gray-300 hover:bg-[#00c4a7] hover:scale-x-110')
-                        } ${isDraggingCustomerThumb ? 'cursor-grabbing' : 'cursor-grab'}`}
-                      >
-                        <div className="w-full h-full flex flex-col items-center justify-center gap-1 pointer-events-none">
-                          <div className={`w-1 h-0.5 rounded-full transition-colors ${isDraggingCustomerThumb ? 'bg-white' : (isDarkMode ? 'bg-gray-400' : 'bg-gray-500')}`} />
-                          <div className={`w-1 h-0.5 rounded-full transition-colors ${isDraggingCustomerThumb ? 'bg-white' : (isDarkMode ? 'bg-gray-400' : 'bg-gray-500')}`} />
-                        </div>
-                      </div>
-
-                      <button 
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); if (customerListRef.current) customerListRef.current.scrollBy({ top: 40, behavior: 'smooth' }); }}
-                        className={`absolute bottom-0.5 z-20 hover:opacity-70 transition-opacity ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}
-                      >
-                        <ChevronDown size={18} strokeWidth={3} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className={`p-2 border-t ${isDarkMode ? 'border-[#1f2937] bg-[#0d1421]' : 'border-[#f1f5f9] bg-[#f8fafc]'}`}>
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3 z-10 cursor-pointer" onClick={() => setHasCustomerSearchBeenClicked(true)}>
-                        <div className="relative flex items-center justify-center">
-                          <Search size={16} className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
-                        </div>
-                      </div>
-                      <input 
-                        type="text"
-                        value={customerSearchQuery}
-                        onChange={(e) => { setCustomerSearchQuery(e.target.value); setHasCustomerSearchBeenClicked(true); }}
-                        onFocus={() => { setIsCustomerSearchFocused(true); setHasCustomerSearchBeenClicked(true); }}
-                        onBlur={() => setIsCustomerSearchFocused(false)}
-                        placeholder="Search customer..."
-                        className={`w-full pl-10 pr-4 py-2 text-sm font-bold outline-none rounded-sm transition-all duration-300 ${
-                          isDarkMode ? 'bg-[#121c2e] text-white placeholder-gray-600' : 'bg-[#f8fafc] text-black placeholder-gray-400'
-                        } border ${
-                          (customerSearchQuery && filteredCustomers.length === 0)
-                            ? 'border-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.4)]'
-                            : (customerSearchQuery || isCustomerSearchFocused) 
-                              ? 'border-[#00c4a7] shadow-[0_0_8px_rgba(0,196,167,0.4)]' 
-                              : (isDarkMode ? 'border-[#374151]' : 'border-[#cbd5e1]')
+                  <ul ref={customerListRef} className="max-h-60 overflow-y-auto">
+                    {customerResults.map((c, index) => (
+                      <li
+                        key={c.id}
+                        data-customer-index={index}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setSelectedCustomer(c);
+                          setCustomerSearchQuery(c.name);
+                          setIsCustomerDropdownOpen(false);
+                        }}
+                        className={`px-4 py-2 text-lg font-bold cursor-pointer ${
+                          focusedCustomerIndex === index
+                            ? (isDarkMode ? 'bg-[#1f2937] text-white' : 'bg-[#f1f5f9] text-black')
+                            : (isDarkMode ? 'text-white hover:bg-[#1f2937]' : 'text-black hover:bg-[#f1f5f9]')
                         }`}
-                        onClick={(e) => { e.stopPropagation(); setHasCustomerSearchBeenClicked(true); }}
-                      />
-                    </div>
-                  </div>
+                      >
+                        {highlightMatch(c.name, customerSearchQuery, true)}
+                      </li>
+                    ))}
+                    {customerResults.length === 0 && !customerSearchQuery.trim() && (
+                      <li className={`px-4 py-2 text-sm italic ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        No customers yet
+                      </li>
+                    )}
+                  </ul>
                 </div>
               )}
             </div>
@@ -1742,8 +1556,9 @@ const App: React.FC = () => {
                 />
               </div>
             </div>
+            </>}
 
-            {['3DM', 'STL', 'MEDIA'].map((type) => {
+            {userEmail && ['3DM', 'STL', 'MEDIA'].map((type) => {
               const isUploaded = uploadedAssets[type];
               const textColor = isUploaded ? 'text-[#00c4a7]' : 'text-[#ef4444]';
               return (
@@ -1903,7 +1718,7 @@ const App: React.FC = () => {
             {!isBand && <div className="w-[350px] ml-[48px]" />}
             <div className={`w-[350px] ${isBand ? 'ml-[251px]' : 'ml-[48px]'}`} />
             <div className={`${isBand ? 'ml-[251px]' : 'ml-[48px]'} w-36 flex items-center justify-center`}>
-              <button onClick={() => setIsSaveModalOpen(true)} className="bg-[#00c4a7] hover:bg-[#00a08a] text-[#111827] px-10 py-2 rounded-full text-2xl font-black uppercase tracking-[0.1em] transition-all transform active:scale-95 shadow-lg whitespace-nowrap">ADD TO LIB</button>
+              {userEmail && <button onClick={() => setIsSaveModalOpen(true)} className="bg-[#00c4a7] hover:bg-[#00a08a] text-[#111827] px-10 py-2 rounded-full text-2xl font-black uppercase tracking-[0.1em] transition-all transform active:scale-95 shadow-lg whitespace-nowrap">ADD TO LIB</button>}
             </div>
           </div>
           
@@ -2010,17 +1825,23 @@ const App: React.FC = () => {
                           <div className="w-full h-full flex items-center justify-center relative overflow-hidden">
                             {selectedImage && (
                               <>
-                                <div 
-                                  className="absolute inset-0 opacity-50 grayscale-[20%]" 
-                                  style={{ 
-                                    backgroundImage: `url(${selectedImage})`, 
-                                    backgroundSize: 'cover', 
-                                    backgroundPosition: 'center', 
-                                    filter: 'blur(45px)',
-                                    transform: 'scale(1.15)'
-                                  }} 
-                                />
-                                <img src={selectedImage} alt="Selection Render" className="relative z-10 w-full h-full object-contain" />
+                                {!isVideoUrl(selectedImage) && (
+                                  <div
+                                    className="absolute inset-0 opacity-50 grayscale-[20%]"
+                                    style={{
+                                      backgroundImage: `url(${selectedImage})`,
+                                      backgroundSize: 'cover',
+                                      backgroundPosition: 'center',
+                                      filter: 'blur(45px)',
+                                      transform: 'scale(1.15)'
+                                    }}
+                                  />
+                                )}
+                                {isVideoUrl(selectedImage) ? (
+                                  <video src={selectedImage} autoPlay muted loop playsInline className="relative z-10 w-full h-full object-contain" />
+                                ) : (
+                                  <img src={selectedImage} alt="Selection Render" className="relative z-10 w-full h-full object-contain" />
+                                )}
                               </>
                             )}
                           </div>
@@ -2158,22 +1979,33 @@ const App: React.FC = () => {
                       </div>
                     ) : selectedImage ? (
                       <>
-                        <div
-                          className="absolute inset-0 opacity-40 grayscale-[10%]"
-                          style={{
-                            backgroundImage: `url(${selectedImage})`,
-                            backgroundSize: 'cover',
-                            backgroundPosition: 'center',
-                            filter: 'blur(35px)',
-                            transform: 'scale(1.1)'
-                          }}
-                        />
-                        <img
-                          src={selectedImage}
-                          className="relative z-10 w-full h-full object-contain drop-shadow-2xl"
-                          style={{ maxHeight: '100%', maxWidth: '100%' }}
-                          alt="Selected Item"
-                        />
+                        {!isVideoUrl(selectedImage) && (
+                          <div
+                            className="absolute inset-0 opacity-40 grayscale-[10%]"
+                            style={{
+                              backgroundImage: `url(${selectedImage})`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                              filter: 'blur(35px)',
+                              transform: 'scale(1.1)'
+                            }}
+                          />
+                        )}
+                        {isVideoUrl(selectedImage) ? (
+                          <video
+                            src={selectedImage}
+                            autoPlay muted loop playsInline
+                            className="relative z-10 w-full h-full object-contain drop-shadow-2xl"
+                            style={{ maxHeight: '100%', maxWidth: '100%' }}
+                          />
+                        ) : (
+                          <img
+                            src={selectedImage}
+                            className="relative z-10 w-full h-full object-contain drop-shadow-2xl"
+                            style={{ maxHeight: '100%', maxWidth: '100%' }}
+                            alt="Selected Item"
+                          />
+                        )}
                         <button onClick={(e) => { e.stopPropagation(); setShowSummaryOverlay(true); setOverlayPage(1); }} className="absolute z-20 top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded transition-colors border border-white/10 group-hover:opacity-100 opacity-0 transform group-hover:scale-110"><Maximize2 size={32} /></button>
                       </>
                     ) : null}
@@ -2187,13 +2019,23 @@ const App: React.FC = () => {
                  {(ringImages.length > 0 || ringStl) && (
                    <div className={`flex items-center justify-start gap-2 overflow-x-auto overflow-y-hidden hide-scrollbar shrink-0 p-2 w-full h-32 relative z-10 ${isDarkMode ? 'bg-[#0b0f19]' : 'bg-[#e2e8f0]'}`}>
                      {ringImages.map((url, i) => (
-                       <img
-                         key={i}
-                         src={url}
-                         alt={`view-${i + 1}`}
-                         onClick={(e) => { e.stopPropagation(); setActivePreviewTab('IMAGE'); setSelectedImage(url); }}
-                         className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${activePreviewTab === 'IMAGE' && url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
-                       />
+                       isVideoUrl(url) ? (
+                         <video
+                           key={i}
+                           src={url}
+                           muted
+                           onClick={(e) => { e.stopPropagation(); setActivePreviewTab('IMAGE'); setSelectedImage(url); }}
+                           className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${activePreviewTab === 'IMAGE' && url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
+                         />
+                       ) : (
+                         <img
+                           key={i}
+                           src={url}
+                           alt={`view-${i + 1}`}
+                           onClick={(e) => { e.stopPropagation(); setActivePreviewTab('IMAGE'); setSelectedImage(url); }}
+                           className={`h-24 w-24 object-cover cursor-pointer shrink-0 border-2 transition-colors ${activePreviewTab === 'IMAGE' && url === selectedImage ? 'border-[#38bdf8]' : isDarkMode ? 'border-transparent hover:border-gray-600' : 'border-transparent hover:border-gray-300'}`}
+                         />
+                       )
                      ))}
                      {ringStl && (
                        <button
@@ -2211,7 +2053,13 @@ const App: React.FC = () => {
         </div>
       );
     } else if (currentIdx === 6) {
-      return renderBuilder(menuLabels[6], 'main', mainGemsSettings, setMainGemsSettings, mainGemsShapes, setMainGemsShapes, mainGemsDirections, setMainGemsDirections, mainGemsSize, setMainGemsSize, mainGemsCount, setMainGemsCount, handleAcceptMainGems, 11);
+      return renderBuilder(menuLabels[6], 'main',
+        mainGemRows[0]?.settings ? [mainGemRows[0].settings] : [], (v: string[]) => updateMainGemRow(0, { settings: v[0] || '', settingId: null }),
+        mainGemRows[0]?.shapes ? [mainGemRows[0].shapes] : [], (v: string[]) => updateMainGemRow(0, { shapes: v[0] || '' }),
+        mainGemRows[0]?.directions ? [mainGemRows[0].directions] : [], (v: string[]) => updateMainGemRow(0, { directions: v[0] || '' }),
+        mainGemRows[0]?.size || '', (v: string) => updateMainGemRow(0, { size: v }),
+        mainGemRows[0]?.count || '', (v: string) => updateMainGemRow(0, { count: v }),
+        handleAcceptMainGems, 11);
     } else if (currentIdx === 9) {
       const secArgs = isShankSubflow ? { 
         settings: shankSecSettings, 
@@ -2273,31 +2121,36 @@ const App: React.FC = () => {
           {/* Gem rows */}
           <div className="flex flex-col items-center justify-start w-full pt-0">
             {shankGems.map((gem, rowIdx) => (
-              <div key={rowIdx} className="grid grid-cols-5 w-full px-10 gap-x-4 mt-12">
+              <div key={rowIdx} className="flex justify-center w-full gap-8 mt-12">
                 <div className="flex flex-col items-center">
-                  <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SETTINGS</span>
-                  <div className="flex flex-col items-center gap-y-1 mb-1 min-h-[24px]">{gem.settings ? <div className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-black'}`}>{gem.settings}</span></div> : null}</div>
-                  <div onClick={() => { setShankPickerRow(rowIdx); setShankPickerField('settings'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors border shadow-inner ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421] hover:bg-[#1a263d]' : 'bg-[#f8fafc] border-[#e2e8f0] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+                  <div onClick={() => { setShankPickerRow(rowIdx); setShankPickerField('settings'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                    <span className={`text-xl font-black italic uppercase tracking-wider ${gem.settings ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.settings || 'SETTINGS'}</span>
+                    <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                  </div>
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SHAPE</span>
-                  <div className="flex flex-col items-center gap-y-1 mb-1 min-h-[24px]">{gem.shapes ? <div className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-black'}`}>{gem.shapes}</span></div> : null}</div>
-                  <div onClick={() => { setShankPickerRow(rowIdx); setShankPickerField('shapes'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors border shadow-inner ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421] hover:bg-[#1a263d]' : 'bg-[#f8fafc] border-[#e2e8f0] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+                  <div onClick={() => { setShankPickerRow(rowIdx); setShankPickerField('shapes'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                    <span className={`text-xl font-black italic uppercase tracking-wider ${gem.shapes ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.shapes || 'SHAPE'}</span>
+                    <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                  </div>
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>DIRECTION</span>
-                  <div className="flex flex-col items-center gap-y-1 mb-1 min-h-[24px]">{gem.directions ? <div className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-black'}`}>{gem.directions}</span></div> : null}</div>
-                  <div onClick={() => { setShankPickerRow(rowIdx); setShankPickerField('directions'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors border shadow-inner ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421] hover:bg-[#1a263d]' : 'bg-[#f8fafc] border-[#e2e8f0] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
+                  <div onClick={() => { setShankPickerRow(rowIdx); setShankPickerField('directions'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                    <span className={`text-xl font-black italic uppercase tracking-wider ${gem.directions ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.directions || 'DIRECTION'}</span>
+                    <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                  </div>
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SIZE</span>
-                  <div className="flex flex-col items-center h-6 mb-1" />
-                  <div className={`w-72 h-12 flex items-center justify-center transition-colors border shadow-inner ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]'}`}><input type="text" value={gem.size} onChange={e => updateShankGem(rowIdx, { size: e.target.value })} placeholder="0x0x0" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} /></div>
+                  <div className={`w-72 h-14 flex items-center rounded-full px-4 gap-2 ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
+                    <span className={`text-2xl font-black italic uppercase tracking-wider shrink-0 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>SIZE</span>
+                    <input type="text" value={gem.size} onChange={e => updateShankGem(rowIdx, { size: e.target.value })} placeholder="0x0x0" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-left placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
+                  </div>
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>COUNT</span>
-                  <div className="flex flex-col items-center h-6 mb-1" />
-                  <div className={`w-72 h-12 flex items-center justify-center transition-colors border shadow-inner ${isDarkMode ? 'bg-[#121c2e] border-[#0d1421]' : 'bg-[#f8fafc] border-[#e2e8f0]'}`}><input type="text" value={gem.count} onChange={e => handleNumericCountChange(e.target.value, v => updateShankGem(rowIdx, { count: v }))} placeholder="1" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} /></div>
+                  <div className={`w-72 h-14 flex items-center rounded-full px-4 gap-2 ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
+                    <span className={`text-2xl font-black italic uppercase tracking-wider shrink-0 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>COUNT</span>
+                    <input type="text" value={gem.count} onChange={e => handleNumericCountChange(e.target.value, v => updateShankGem(rowIdx, { count: v }))} placeholder="1" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-left placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -2324,10 +2177,13 @@ const App: React.FC = () => {
               </div>
             </div>
           )}
+
+          <div className="absolute bottom-12 right-16">
+            <button onClick={() => navigateTo(4)} className={`text-5xl font-black uppercase tracking-[0.2em] transition-opacity hover:opacity-70 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>ACCEPT</button>
+          </div>
         </div>
       );
     } else if (currentIdx === 5) {
-      const placeholders = ["SET", "SHP", "DIR", "SIZ", "COU"];
       const isHeadSel = isHeadTypeSelected;
       const isTextureSel = selectedHeadItems.some(item => menuData[19].includes(item));
       const sectionBtnClass = (sel: boolean, blink: boolean) =>
@@ -2349,47 +2205,134 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          {/* MAIN GEM label */}
-          <span className={`text-2xl font-black tracking-[0.15em] uppercase mb-8 ${isDarkMode ? 'text-white' : 'text-black'}`}>MAIN GEM</span>
+          {/* MAIN GEM label + ADD GEMS */}
+          <span className={`text-2xl font-black tracking-[0.15em] uppercase mb-2 ${isDarkMode ? 'text-white' : 'text-black'}`}>MAIN GEM</span>
+          <button
+            onClick={() => setMainGemRows(prev => [...prev, mkMainGem()])}
+            className={`mb-2 text-xl font-black italic uppercase tracking-widest px-6 py-1 border transition-colors ${isDarkMode ? 'border-[#374151] text-gray-300 hover:text-white hover:border-white' : 'border-gray-300 text-gray-600 hover:text-black hover:border-black'}`}
+          >+ ADD GEMS</button>
 
-          {/* 5-field row */}
-          <div className="flex justify-center w-full gap-8">
-            <div className="flex flex-col items-center">
-              <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SETTINGS</span>
-              <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">
-                {mainGemsSettings.map((item, i) => <div key={i} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div>)}
+          {mainGemRows.map((gem, rowIdx) => (
+            <div key={rowIdx} className="flex justify-center w-full gap-8 mt-8">
+              <div className="flex flex-col items-center">
+                <div onClick={() => { setMainGemPickerRow(rowIdx); setMainGemPickerField('settings'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                  <span className={`text-xl font-black italic uppercase tracking-wider ${gem.settings ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.settings || 'SETTINGS'}</span>
+                  <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                </div>
               </div>
-              <div onClick={() => { gemPickerSetterRef.current = setMainGemsSettings; setHeadGemPickerField('settings'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SHAPE</span>
-              <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">
-                {mainGemsShapes.map((item, i) => <div key={i} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div>)}
+              <div className="flex flex-col items-center">
+                <div onClick={() => { setMainGemPickerRow(rowIdx); setMainGemPickerField('shapes'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                  <span className={`text-xl font-black italic uppercase tracking-wider ${gem.shapes ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.shapes || 'SHAPE'}</span>
+                  <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                </div>
               </div>
-              <div onClick={() => { gemPickerSetterRef.current = setMainGemsShapes; setHeadGemPickerField('shapes'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>DIRECTION</span>
-              <div className="flex flex-col items-center gap-y-3 mb-1 min-h-[24px]">
-                {mainGemsDirections.map((item, i) => <div key={i} className="flex items-center h-6"><span className={`text-xl font-black italic uppercase tracking-wider ${placeholders.includes(item) ? 'text-[#ef4444]' : (isDarkMode ? 'text-white' : 'text-black')}`}>{item}</span></div>)}
+              <div className="flex flex-col items-center">
+                <div onClick={() => { setMainGemPickerRow(rowIdx); setMainGemPickerField('directions'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                  <span className={`text-xl font-black italic uppercase tracking-wider ${gem.directions ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.directions || 'DIRECTION'}</span>
+                  <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                </div>
               </div>
-              <div onClick={() => { gemPickerSetterRef.current = setMainGemsDirections; setHeadGemPickerField('directions'); }} className={`w-72 h-12 flex items-center justify-center cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}><span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span></div>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>SIZE</span>
-              <div className="h-6 mb-1" />
-              <div className={`w-72 h-14 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
-                <input type="text" value={mainGemsSize} onChange={(e) => { const val = e.target.value.replace(/[^0-9xX.]/g, ''); setMainGemsSize(val); }} placeholder="0x0x0" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
+              <div className="flex flex-col items-center">
+                <div className={`w-72 h-14 flex items-center rounded-full px-4 gap-2 ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
+                  <span className={`text-2xl font-black italic uppercase tracking-wider shrink-0 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>SIZE</span>
+                  <input type="text" value={gem.size} onChange={e => updateMainGemRow(rowIdx, { size: e.target.value.replace(/[^0-9xX.]/g, '') })} placeholder="0x0x0" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-left placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
+                </div>
               </div>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className={`text-2xl font-black italic uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mb-1`}>COUNT</span>
-              <div className="h-6 mb-1" />
-              <div className={`w-72 h-14 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
-                <input type="text" value={mainGemsCount} onChange={(e) => handleNumericCountChange(e.target.value, setMainGemsCount)} placeholder="1" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-center placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
+              <div className="flex flex-col items-center">
+                <div className={`w-72 h-14 flex items-center rounded-full px-4 gap-2 ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
+                  <span className={`text-2xl font-black italic uppercase tracking-wider shrink-0 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>COUNT</span>
+                  <input type="text" value={gem.count} onChange={e => handleNumericCountChange(e.target.value, v => updateMainGemRow(rowIdx, { count: v }))} placeholder="1" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-left placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
+                </div>
               </div>
             </div>
-          </div>
+          ))}
+
+          {/* MAIN GEM inline picker modal */}
+          {mainGemPickerField !== null && (
+            <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }} onClick={() => setMainGemPickerField(null)}>
+              <div style={{ background: isDarkMode ? '#0f1b2b' : '#fff', padding: '24px', borderRadius: '8px', minWidth: '320px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {mainGemPickerField === 'settings'
+                    ? (lookups?.head_stone_settings || []).map((item, i) => (
+                        <div key={i} onClick={() => { updateMainGemRow(mainGemPickerRow, { settings: item.name, settingId: item.id }); setMainGemPickerField(null); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]'}`}>{item.name}</div>
+                      ))
+                    : mainGemPickerField === 'shapes'
+                    ? (lookups?.stone_shapes || []).map((item, i) => (
+                        <div key={i} onClick={() => { updateMainGemRow(mainGemPickerRow, { shapes: item.name }); setMainGemPickerField(null); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]'}`}>{item.name}</div>
+                      ))
+                    : (lookups?.directions || []).map((item, i) => (
+                        <div key={i} onClick={() => { updateMainGemRow(mainGemPickerRow, { directions: item.name }); setMainGemPickerField(null); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]'}`}>{item.name}</div>
+                      ))
+                  }
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SECOND GEMS label + ADD GEMS */}
+          <span className={`text-xl font-black tracking-[0.15em] uppercase mt-10 mb-2 ${isDarkMode ? 'text-white' : 'text-black'}`}>SECOND GEMS</span>
+          <button
+            onClick={() => setHeadSecGems(prev => [...prev, mkHeadSecGem()])}
+            className={`mb-2 text-xl font-black italic uppercase tracking-widest px-6 py-1 border transition-colors ${isDarkMode ? 'border-[#374151] text-gray-300 hover:text-white hover:border-white' : 'border-gray-300 text-gray-600 hover:text-black hover:border-black'}`}
+          >+ ADD GEMS</button>
+
+          {/* SECOND GEMS rows */}
+          {headSecGems.map((gem, rowIdx) => (
+            <div key={rowIdx} className="flex justify-center w-full gap-8 mt-8">
+                <div className="flex flex-col items-center">
+                  <div onClick={() => { setHeadSecPickerRow(rowIdx); setHeadSecPickerField('settings'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                    <span className={`text-xl font-black italic uppercase tracking-wider ${gem.settings ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.settings || 'SETTINGS'}</span>
+                    <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center">
+                  <div onClick={() => { setHeadSecPickerRow(rowIdx); setHeadSecPickerField('shapes'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                    <span className={`text-xl font-black italic uppercase tracking-wider ${gem.shapes ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.shapes || 'SHAPE'}</span>
+                    <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center">
+                  <div onClick={() => { setHeadSecPickerRow(rowIdx); setHeadSecPickerField('directions'); }} className={`w-72 h-12 flex items-center justify-between px-4 cursor-pointer transition-colors rounded-full ${isDarkMode ? 'bg-[#121c2e] hover:bg-[#1a263d]' : 'bg-[#f8fafc] hover:bg-[#f1f5f9]'}`}>
+                    <span className={`text-xl font-black italic uppercase tracking-wider ${gem.directions ? (isDarkMode ? 'text-white' : 'text-black') : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{gem.directions || 'DIRECTION'}</span>
+                    <span className={`text-4xl font-light ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>+</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center">
+                  <div className={`w-72 h-14 flex items-center rounded-full px-4 gap-2 ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
+                    <span className={`text-2xl font-black italic uppercase tracking-wider shrink-0 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>SIZE</span>
+                    <input type="text" value={gem.size} onChange={e => updateHeadSecGem(rowIdx, { size: e.target.value.replace(/[^0-9xX.]/g, '') })} placeholder="0x0x0" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-left placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
+                  </div>
+                </div>
+                <div className="flex flex-col items-center">
+                  <div className={`w-72 h-14 flex items-center rounded-full px-4 gap-2 ${isDarkMode ? 'bg-[#121c2e]' : 'bg-[#f8fafc]'}`}>
+                    <span className={`text-2xl font-black italic uppercase tracking-wider shrink-0 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>COUNT</span>
+                    <input type="text" value={gem.count} onChange={e => handleNumericCountChange(e.target.value, v => updateHeadSecGem(rowIdx, { count: v }))} placeholder="1" className={`w-full h-full bg-transparent text-2xl font-black italic uppercase tracking-wider outline-none text-left placeholder-gray-600 ${isDarkMode ? 'text-white' : 'text-black'}`} />
+                  </div>
+                </div>
+            </div>
+          ))}
+
+          {/* SECOND GEMS inline picker modal */}
+          {headSecPickerField !== null && (
+            <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }} onClick={() => setHeadSecPickerField(null)}>
+              <div style={{ background: isDarkMode ? '#0f1b2b' : '#fff', padding: '24px', borderRadius: '8px', minWidth: '320px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {headSecPickerField === 'settings'
+                    ? (lookups?.shank_stone_settings || []).map((item, i) => (
+                        <div key={i} onClick={() => { updateHeadSecGem(headSecPickerRow, { settings: item.name, settingId: item.id }); setHeadSecPickerField(null); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]'}`}>{item.name}</div>
+                      ))
+                    : headSecPickerField === 'shapes'
+                    ? (lookups?.stone_shapes || []).map((item, i) => (
+                        <div key={i} onClick={() => { updateHeadSecGem(headSecPickerRow, { shapes: item.name }); setHeadSecPickerField(null); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]'}`}>{item.name}</div>
+                      ))
+                    : (lookups?.directions || []).map((item, i) => (
+                        <div key={i} onClick={() => { updateHeadSecGem(headSecPickerRow, { directions: item.name }); setHeadSecPickerField(null); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]'}`}>{item.name}</div>
+                      ))
+                  }
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="absolute bottom-12 right-16">
             <button onClick={handleAcceptMainGems} className={`text-5xl font-black uppercase tracking-[0.2em] transition-opacity hover:opacity-70 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>ACCEPT</button>
@@ -2465,9 +2408,9 @@ const App: React.FC = () => {
                 else if (currentIdx === 14 || currentIdx === 16) isSelected = selectedShankItems.includes(type);
                 else if (currentIdx === 15) isSelected = selectedProfileItems.includes(type);
                 else if (currentIdx === 19) isSelected = isShankSubflow ? selectedShankItems.includes(type) : selectedHeadItems.includes(type);
-                else if (currentIdx === 11) isSelected = gemBuilderType === 'main' ? mainGemsSettings.includes(type) : (isShankSubflow ? shankSecSettings.includes(type) : headSecSettings.includes(type));
-                else if (currentIdx === 12) isSelected = gemBuilderType === 'main' ? mainGemsShapes.includes(type) : (isShankSubflow ? shankSecShapes.includes(type) : headSecShapes.includes(type));
-                else if (currentIdx === 13) isSelected = gemBuilderType === 'main' ? mainGemsDirections.includes(type) : (isShankSubflow ? shankSecDirections.includes(type) : headSecDirections.includes(type));
+                else if (currentIdx === 11) isSelected = gemBuilderType === 'main' ? (mainGemRows[0]?.settings === type) : (isShankSubflow ? shankSecSettings.includes(type) : headSecSettings.includes(type));
+                else if (currentIdx === 12) isSelected = gemBuilderType === 'main' ? (mainGemRows[0]?.shapes === type) : (isShankSubflow ? shankSecShapes.includes(type) : headSecShapes.includes(type));
+                else if (currentIdx === 13) isSelected = gemBuilderType === 'main' ? (mainGemRows[0]?.directions === type) : (isShankSubflow ? shankSecDirections.includes(type) : headSecDirections.includes(type));
                 else if (currentIdx === 18) isSelected = isShankSubflow ? shankSecSettings.includes(type) : headSecSettings.includes(type);
                 else isSelected = (selectedOptions[currentIdx] || []).includes(type);
               }
@@ -2504,7 +2447,7 @@ const App: React.FC = () => {
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
       <input type="file" ref={fileInput3DMRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) { console.log('[3DM debug] name:', f.name, '| path:', (f as any).path, '| webkitRelativePath:', f.webkitRelativePath); setFile3dm(f); setUploadedAssets(prev => ({ ...prev, '3DM': true })); if (!jobName) setJobName(f.name.replace(/\.3dm$/i, '')); } e.target.value = ''; }} className="hidden" accept=".3dm" />
       <input type="file" ref={fileInputSTLRef} onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFileStl(f); setUploadedAssets(prev => ({ ...prev, 'STL': true })); } e.target.value = ''; }} className="hidden" accept=".stl" />
-      <input type="file" ref={fileInputMediaRef} onChange={(e) => { const files = e.target.files; if (files && files.length > 0) { setFileMedia(prev => [...prev, ...Array.from(files)]); setUploadedAssets(prev => ({ ...prev, 'MEDIA': true })); } e.target.value = ''; }} className="hidden" accept="image/*" multiple />
+      <input type="file" ref={fileInputMediaRef} onChange={(e) => { const files = e.target.files; if (files && files.length > 0) { setFileMedia(prev => [...prev, ...Array.from(files)]); setUploadedAssets(prev => ({ ...prev, 'MEDIA': true })); } e.target.value = ''; }} className="hidden" accept="image/*,.mp4,.mov,.avi,.webm,.mkv" multiple />
       <div className={`w-full flex flex-col items-center duration-0 ${isAnyModalOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <header className={`fixed top-0 left-0 right-0 h-10 flex items-center justify-between px-0 z-50 transform ${isDarkMode ? 'bg-[#1f2937]' : 'bg-[#e5e7eb] border-b border-[#d1d5db]'} shadow-sm`}>
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -2568,7 +2511,7 @@ const App: React.FC = () => {
                       columns: [
                         { label: "TYPE", selections: selectedOptions[7] || [], index: 7 },
                         { label: "MAIN GEM", selections: selectedHeadItems.filter(item => item.startsWith("M_")), index: 5 },
-                        { label: "GEMS", selections: selectedHeadItems.filter(item => item.startsWith("SEC_")), index: 9 },
+                        { label: "GEMS", selections: headSecGems.filter(r => r.settings || r.shapes || r.directions || r.size || r.count).map(r => [r.settings, r.shapes, r.directions, r.size && `sz:${r.size}`, r.count && `\u00d7${r.count}`].filter(Boolean).join(' / ')), index: 9 },
                         { label: "Texture&Details", selections: selectedHeadItems.filter(item => (selectedOptions[19] || []).includes(item)), index: 19 },
                       ]
                     },
@@ -2625,7 +2568,7 @@ const App: React.FC = () => {
                         {customerSection && (
                           <div className="col-span-1 flex flex-col gap-y-0.5">
                             <div className={`${libTitleSize} font-black uppercase tracking-widest opacity-80`}>
-                              <span className={selectedCustomer ? 'text-[#00c4a7]' : 'text-[#ef4444]'}>|</span> <span className={selectedCustomer ? 'text-white' : 'text-[#ef4444]'}>{selectedCustomer || 'CUSTOMER'}</span>
+                              <span className={selectedCustomer ? 'text-[#00c4a7]' : 'text-[#ef4444]'}>|</span> <span className={selectedCustomer ? 'text-white' : 'text-[#ef4444]'}>{selectedCustomer?.name || 'CUSTOMER'}</span>
                             </div>
                             <div className="flex flex-col">
                               {customerSection.columns.map((col, cIdx) => (
@@ -2709,7 +2652,7 @@ const App: React.FC = () => {
                       { label: "TYPE", selections: [activeJewelryType === 'ring' ? 'Ring' : 'Band'], index: 0 },
                       { label: "RING TYPE", selections: activeJewelryType === 'ring' ? (selectedOptions[2] || []) : (selectedOptions[3] || []), index: activeJewelryType === 'ring' ? 2 : 3 },
                       { label: "US SIZE", selections: selectedSizeItems.length > 0 ? [selectedSizeItems[0]] : [], index: 4 },
-                      { label: "Customer", selections: selectedCustomer ? [selectedCustomer] : [], index: -1 },
+                      { label: "Customer", selections: selectedCustomer ? [selectedCustomer.name] : [], index: -1 },
                       { label: "Name", selections: jobName ? [jobName] : [], index: -1 },
                     ]
                   },
@@ -2718,7 +2661,7 @@ const App: React.FC = () => {
                     columns: [
                       { label: "TYPE", selections: selectedOptions[7] || [], index: 7 },
                       { label: "MAIN GEM", selections: selectedHeadItems.filter(item => item.startsWith("M_")), index: 5 },
-                      { label: "GEMS", selections: selectedHeadItems.filter(item => item.startsWith("SEC_")), index: 9 },
+                      { label: "GEMS", selections: headSecGems.filter(r => r.settings || r.shapes || r.directions || r.size || r.count).map(r => [r.settings, r.shapes, r.directions, r.size && `sz:${r.size}`, r.count && `\u00d7${r.count}`].filter(Boolean).join(' / ')), index: 9 },
                       { label: "Texture&Details", selections: selectedHeadItems.filter(item => (selectedOptions[19] || []).includes(item)), index: 19 },
                     ]
                   },
@@ -2796,7 +2739,10 @@ const App: React.FC = () => {
             {(activeJewelryType === 'band' || activeJewelryType === 'bands') ? (<>
               <div style={{ fontSize: '18px', marginBottom: '12px' }}>Band Info</div>
               <div><span style={{ color: 'red', fontWeight: 700 }}>TYPE: </span>{infoRing.band_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>SHANK TYPE: </span>{infoRing.shank_type_names?.join(', ') || '—'}</div>
+              <div><span style={{ color: 'red', fontWeight: 700 }}>TEXTURE & DETAILS: </span>{infoRing.shank_texture_names?.join(', ') || '—'}</div>
               <div><span style={{ color: 'red', fontWeight: 700 }}>PROFILE: </span>{infoRing.profile_names?.join(', ') || '—'}</div>
+              <div style={{ display: 'flex' }}><span style={{ color: 'red', fontWeight: 700, marginRight: 5, flexShrink: 0 }}>SHANK GEM: </span><div>{infoRing.shank_gems?.length ? infoRing.shank_gems.map((g, i) => <div key={i}>{[g.settings, g.shape, g.direction, g.size && `sz:${g.size}`, `×${g.count}`].filter(Boolean).join(' / ')}</div>) : '—'}</div></div>
               <div><span style={{ color: 'red', fontWeight: 700 }}>US SIZE: </span>{infoRing.finger_size || '—'}</div>
             </>) : (<>
               <div style={{ fontSize: '18px', marginBottom: '12px' }}>Ring Info</div>
@@ -2834,17 +2780,23 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center animate-in fade-in zoom-in duration-200">
           <button onClick={() => setIsFullScreenImage(false)} className="absolute top-6 right-6 text-white/70 hover:text-white transition-colors z-[210] p-2 hover:bg-white/10 rounded-full"><X size={48} strokeWidth={2.5} /></button>
           <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
-             <div 
-               className="absolute inset-0 opacity-60 grayscale-[30%]" 
-               style={{ 
-                 backgroundImage: `url(${selectedImage})`, 
-                 backgroundSize: 'cover', 
-                 backgroundPosition: 'center', 
-                 filter: 'blur(60px)',
-                 transform: 'scale(1.2)'
-               }} 
-             />
-             <img src={selectedImage} className="relative z-10 max-w-full max-h-full object-contain pointer-events-none drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)]" alt="Full Screen View" />
+             {!isVideoUrl(selectedImage) && (
+               <div
+                 className="absolute inset-0 opacity-60 grayscale-[30%]"
+                 style={{
+                   backgroundImage: `url(${selectedImage})`,
+                   backgroundSize: 'cover',
+                   backgroundPosition: 'center',
+                   filter: 'blur(60px)',
+                   transform: 'scale(1.2)'
+                 }}
+               />
+             )}
+             {isVideoUrl(selectedImage) ? (
+               <video src={selectedImage} autoPlay muted loop playsInline className="relative z-10 max-w-full max-h-full object-contain drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)]" />
+             ) : (
+               <img src={selectedImage} className="relative z-10 max-w-full max-h-full object-contain pointer-events-none drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)]" alt="Full Screen View" />
+             )}
           </div>
         </div>
       )}
@@ -2967,13 +2919,13 @@ const App: React.FC = () => {
                     const sel = selectedShankItems.includes(item);
                     return <div key={i} onClick={() => { setSelectedShankItems(prev => sel ? prev.filter(x => x !== item) : [...prev, item]); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${sel ? (isDarkMode ? 'text-white border-white bg-[#1f2937]' : 'text-black border-black bg-[#e2e8f0]') : (isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]')}`}>{sel ? '✓ ' : ''}{item}</div>;
                   })
-                : (headGemPickerField === 'settings' || headGemPickerField === 'shapes' || headGemPickerField === 'directions')
-                ? (headGemPickerField === 'settings' ? menuData[11] : headGemPickerField === 'shapes' ? menuData[12] : menuData[13]).map((opt, i) => (
+                : (headGemPickerField === 'settings' || headGemPickerField === 'sec_settings' || headGemPickerField === 'shapes' || headGemPickerField === 'directions')
+                ? (headGemPickerField === 'settings' ? menuData[11] : headGemPickerField === 'sec_settings' ? menuData[18] : headGemPickerField === 'shapes' ? menuData[12] : menuData[13]).map((opt, i) => (
                     <div key={i} onClick={() => { gemPickerSetterRef.current?.([opt]); setHeadGemPickerField(null); }} className={`px-2 py-3 text-xl font-black italic uppercase tracking-wider cursor-pointer border text-center transition-colors ${isDarkMode ? 'text-white border-[#1f2937] hover:bg-[#1f2937]' : 'text-black border-[#f1f5f9] hover:bg-[#f1f5f9]'}`}>{opt}</div>
                   ))
                 : null}
             </div>
-            {(headGemPickerField !== 'settings' && headGemPickerField !== 'shapes' && headGemPickerField !== 'directions') && (
+            {(headGemPickerField !== 'settings' && headGemPickerField !== 'sec_settings' && headGemPickerField !== 'shapes' && headGemPickerField !== 'directions') && (
               <div style={{ marginTop: '16px', textAlign: 'center' }}>
                 <button onClick={() => setHeadGemPickerField(null)} className={`text-sm font-black uppercase tracking-widest px-6 py-2 border ${isDarkMode ? 'border-[#374151] text-gray-300 hover:text-white hover:border-white' : 'border-gray-300 text-gray-600 hover:text-black hover:border-black'}`}>DONE</button>
               </div>

@@ -16,7 +16,9 @@
       "Bash(cd /mnt/d/python/Jewelry/frontend_new && npm install jszip 2>&1 | tail -5)",
       "Bash(ls /mnt/)",
       "Read(//proc/**)",
-      "Bash(powershell.exe -Command \"Test-Path 'D:\\\\python\\\\Jewelry\\\\frontend_new\\\\node_modules\\\\three'\")"
+      "Bash(powershell.exe -Command \"Test-Path 'D:\\\\python\\\\Jewelry\\\\frontend_new\\\\node_modules\\\\three'\")",
+      "Bash(diff /tmp/App_original.tsx frontend_new/App.tsx 2>&1 | grep -n \"^[0-9]\" | grep -v \"^[0-9]*:[0-9]*,[0-9]*d\\\\|^[0-9]*:[0-9]*a[0-9]*$\" | head -60)",
+      "Bash(cd D:/python/Jewelry/frontend_new && npx tsc --noEmit --skipLibCheck 2>&1; echo \"EXIT:$?\")"
     ]
   }
 }

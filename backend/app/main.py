@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, text
 
 from .db import SessionLocal, engine
 from . import models
@@ -43,6 +43,17 @@ app = FastAPI(title="Jewelry Web (FastAPI + HTML)")
 @app.on_event("startup")
 def create_tables():
     Base.metadata.create_all(bind=engine)
+    # Idempotent column migrations for existing tables
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(
+                "ALTER TABLE rings ADD COLUMN customer_id INT NULL, "
+                "ADD CONSTRAINT fk_rings_customer FOREIGN KEY (customer_id) "
+                "REFERENCES customers(id) ON DELETE SET NULL ON UPDATE CASCADE"
+            ))
+            conn.commit()
+        except Exception:
+            pass  # Column already exists or constraint already present
 
 
 app.add_middleware(
@@ -113,6 +124,38 @@ def auth_me(current_user: models.User = Depends(get_current_user)):
 
 
 # -------------------------
+# Customer endpoints
+# -------------------------
+class CustomerBody(BaseModel):
+    name: str
+
+
+@app.get("/customers")
+def list_customers(search: str = "", db: Session = Depends(get_db)):
+    q = select(models.Customer).order_by(models.Customer.customer_name)
+    if search:
+        q = q.where(models.Customer.customer_name.ilike(f"%{search}%"))
+    rows = db.execute(q.limit(50)).scalars().all()
+    return [{"id": r.id, "name": r.customer_name} for r in rows]
+
+
+@app.post("/customers")
+def create_customer(
+    body: CustomerBody,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    customer = models.Customer(
+        customer_name=body.name.strip(),
+        created_by=current_user.id,
+    )
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    return {"id": customer.id, "name": customer.customer_name}
+
+
+# -------------------------
 # Lookups API (used by React frontend)
 # -------------------------
 @app.get("/api/lookups")
@@ -150,7 +193,7 @@ def get_ring_files(ring_id: int, db: Session = Depends(get_db)):
     folder = Path(ring.pictures_folder) if ring.pictures_folder else None
     if folder and folder.exists():
         code = 10000000 + ring_id
-        exts = {'.jpg', '.jpeg', '.png', '.webp'}
+        exts = {'.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov', '.avi', '.webm', '.mkv'}
         files = sorted(f.name for f in folder.iterdir() if f.suffix.lower() in exts)
         images = [f"/media/{code}/{name}" for name in files]
     else:
@@ -168,7 +211,7 @@ def get_ring_images(ring_id: int, db: Session = Depends(get_db)):
     if not folder or not folder.exists():
         return {"images": []}
     code = 10000000 + ring_id
-    exts = {'.jpg', '.jpeg', '.png', '.webp'}
+    exts = {'.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov', '.avi', '.webm', '.mkv'}
     files = sorted(f.name for f in folder.iterdir() if f.suffix.lower() in exts)
     return {"images": [f"/media/{code}/{name}" for name in files]}
 
@@ -493,9 +536,12 @@ def create_ring_submit(
     bands_ids: List[int] = Form(default=[]),
     bands_textures_ids: List[int] = Form(default=[]),
 
+    customer_id: Optional[int] = Form(default=None),
+
     head_gems_json: str = Form(default="[]"),
     shank_gems_json: str = Form(default="[]"),
     band_gems_json: str = Form(default="[]"),
+    head_second_gems_json: str = Form(default="[]"),
 
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -503,6 +549,7 @@ def create_ring_submit(
     head_gems: List[Dict[str, Any]] = json.loads(head_gems_json or "[]")
     shank_gems: List[Dict[str, Any]] = json.loads(shank_gems_json or "[]")
     band_gems: List[Dict[str, Any]] = json.loads(band_gems_json or "[]")
+    head_second_gems: List[Dict[str, Any]] = json.loads(head_second_gems_json or "[]")
 
     def _safe_int(val) -> Optional[int]:
         try:
@@ -566,7 +613,7 @@ def create_ring_submit(
 
         for i, pic in enumerate(pictures or [], start=1):
             extp = safe_ext(pic.filename)
-            if extp not in [".jpg", ".jpeg", ".png", ".webp"]:
+            if extp not in ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov', '.avi', '.webm', '.mkv']:
                 continue
             p = tmp_pics / f"pic_{i:02d}{extp}"
             with open(p, "wb") as f:
@@ -578,6 +625,7 @@ def create_ring_submit(
             pictures_folder="PENDING",
             finger_size_id=finger_size_id or None,
             user_id=current_user.id,
+            customer_id=customer_id or None,
         )
         db.add(ring)
         db.flush()
@@ -695,6 +743,21 @@ def create_ring_submit(
                 directions_id=did,
                 stone_size=str(g.get("stone_size", "")),
                 stone_count=norm_cnt(g),
+            ))
+
+        for g in head_second_gems:
+            sid = _safe_int(g.get("shank_stone_setting_id"))
+            shid = _safe_int(g.get("second_stone_shape_id"))
+            did = _safe_int(g.get("second_directions_id"))
+            if not sid or not shid or not did:
+                continue
+            db.add(models.HeadSecondGems(
+                rings_id=rings_id,
+                shank_stone_setting_id=sid,
+                second_stone_shape_id=shid,
+                second_directions_id=did,
+                second_stone_size=str(g.get("second_stone_size", "")),
+                second_stone_count=_safe_int(g.get("second_stone_count")) or 1,
             ))
 
         db.commit()

@@ -19,6 +19,34 @@ export interface LookupItem {
   name: string;
 }
 
+export interface Customer {
+  id: number;
+  name: string;
+}
+
+export async function fetchCustomers(search: string): Promise<Customer[]> {
+  const res = await apiFetch(`/customers?search=${encodeURIComponent(search)}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createCustomer(name: string): Promise<Customer> {
+  const token = getAuthToken();
+  const res = await apiFetch('/customers', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Create customer failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export interface Lookups {
   ring_types: LookupItem[];
   head_settings: LookupItem[];
